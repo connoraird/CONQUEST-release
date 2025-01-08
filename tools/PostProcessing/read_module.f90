@@ -349,6 +349,7 @@ contains
   subroutine read_block_input
 
     use datatypes
+    use numbers, ONLY: very_small
     use local, ONLY: nblockx, nblocky, nblockz, block_store, nprocs, block_size_x, block_size_y, block_size_z, &
          grid_x, grid_y, grid_z, nptsx, nptsy, nptsz, stm_z_min, stm_z_max, stm_x_min, stm_x_max, &
          stm_y_min, stm_y_max, nxmin, nymin, nzmin, gpv
@@ -380,13 +381,13 @@ contains
     ! Cell volume
     volume = BohrToAng*BohrToAng*BohrToAng*r_super_x*r_super_y*r_super_z
     ! Number of points in the area that the user has specified
-    nptsx = floor(BohrToAng*(stm_x_max - stm_x_min)/grid_x)
-    nptsy = floor(BohrToAng*(stm_y_max - stm_y_min)/grid_y)
-    nptsz = floor(BohrToAng*(stm_z_max - stm_z_min)/grid_z)
+    nptsx = floor(BohrToAng*(stm_x_max - stm_x_min)/grid_x+very_small)
+    nptsy = floor(BohrToAng*(stm_y_max - stm_y_min)/grid_y+very_small)
+    nptsz = floor(BohrToAng*(stm_z_max - stm_z_min)/grid_z+very_small)
     write(*,fmt='(4x,"Points in user-specified area: ",3i5)') nptsx,nptsy,nptsz
     gpv = volume/real(nptsx*nptsy*nptsz,double)
     ! Work out starting grid points in user area
-    nxmin = floor(BohrToAng*stm_x_min/grid_x)
+    nxmin = floor(BohrToAng*stm_x_min/grid_x)  ! + very_small? (2025.Jan.8 TM)
     if(stm_x_min - grid_x*real(nxmin,double)>1e-3) nxmin = nxmin + 1
     nymin = floor(BohrToAng*stm_y_min/grid_y)
     if(stm_y_min - grid_y*real(nymin,double)>1e-3) nymin = nymin + 1

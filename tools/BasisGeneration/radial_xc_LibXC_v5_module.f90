@@ -1,7 +1,7 @@
 ! Contains routines to evaluate XC energy and potential for radial charge distributions
 module radial_xc
 
-  use xc_f90_lib_m
+  use xc_f03_lib_m
 
   implicit none
 
@@ -25,8 +25,8 @@ module radial_xc
   ! LibXC variables
   integer :: n_xc_terms
   integer, dimension(2) :: i_xc_family
-  type(xc_f90_func_t), dimension(2) :: xc_func
-  type(xc_f90_func_info_t), dimension(2) :: xc_info
+  type(xc_f03_func_t), dimension(2) :: xc_func
+  type(xc_f03_func_info_t), dimension(2) :: xc_info
   logical :: flag_use_libxc
 
 contains
@@ -43,8 +43,8 @@ contains
     integer :: vmajor, vminor, vmicro, i, j
     integer, dimension(2) :: xcpart
     character(len=120) :: name, kind, family, ref
-    type(xc_f90_func_t) :: temp_xc_func
-    type(xc_f90_func_info_t) :: temp_xc_info
+    type(xc_f03_func_t) :: temp_xc_func
+    type(xc_f03_func_info_t) :: temp_xc_info
 
     ! Test for LibXC or CQ
     if(flag_functional_type<0) then
@@ -52,7 +52,7 @@ contains
        ! LibXC functional specified
        ! --------------------------
        flag_use_libxc = .true.
-       call xc_f90_version(vmajor, vminor, vmicro)
+       call xc_f03_version(vmajor, vminor, vmicro)
        if(inode==ionode.AND.iprint>0) then
           if(vmajor>2) then
              write(*,'("LibXC version: ",I1,".",I1,".",I1)') vmajor, vminor, vmicro
@@ -70,13 +70,13 @@ contains
           i = floor(-flag_functional_type/1000.0_double)
           ! Temporary init to find exchange or correlation
           if(nspin==1) then
-             call xc_f90_func_init(temp_xc_func, i, XC_UNPOLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_UNPOLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           else if(nspin==2) then
-             call xc_f90_func_init(temp_xc_func, i, XC_POLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_POLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           end if
-          select case(xc_f90_func_info_get_kind(temp_xc_info))
+          select case(xc_f03_func_info_get_kind(temp_xc_info))
           case(XC_EXCHANGE)
              xcpart(1) = i
              xcpart(2) = -flag_functional_type - xcpart(1)*1000
@@ -84,23 +84,23 @@ contains
              xcpart(2) = i
              xcpart(1) = -flag_functional_type - xcpart(2)*1000
           end select
-          call xc_f90_func_end(temp_xc_func)
+          call xc_f03_func_end(temp_xc_func)
        end if
        ! Now initialise and output
        do i=1,n_xc_terms
           if(nspin==1) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           else if(nspin==2) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           end if
           ! Consistent threshold with Conquest
-          !if(vmajor>2) call xc_f90_func_set_dens_threshold(xc_func(i),RD_ERR)
-          name = xc_f90_func_info_get_name(xc_info(i))
-          i_xc_family(i) = xc_f90_func_info_get_family(xc_info(i))
+          !if(vmajor>2) call xc_f03_func_set_dens_threshold(xc_func(i),RD_ERR)
+          name = xc_f03_func_info_get_name(xc_info(i))
+          i_xc_family(i) = xc_f03_func_info_get_family(xc_info(i))
           if(inode==ionode) then
-             select case(xc_f90_func_info_get_kind(xc_info(i)))
+             select case(xc_f03_func_info_get_kind(xc_info(i)))
              case (XC_EXCHANGE)
                 write(kind, '(a)') 'an exchange functional'
              case (XC_CORRELATION)
@@ -134,10 +134,10 @@ contains
                         " family and is defined in the reference(s):")') &
                         trim(name), trim(kind), trim(family)
                    j = 0
-                   ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                   ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    do while(j >= 0)
                       write(*, '(a,i1,2a)') '[', j, '] ', trim(ref)
-                      ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                      ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    end do
                 else
                    write(*,'("The functional ", a, " is ", a, ", and it belongs to the ", a, &
@@ -237,10 +237,10 @@ contains
           ! Call routine
           select case (i_xc_family(n))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc(xc_func(n),int(n_tot,kind=wide),loc_rho(1),exc_array(1),vrho(1))
+             call xc_f03_lda_exc_vxc(xc_func(n),int(n_tot,kind=wide),loc_rho(1),exc_array(1),vrho(1))
              vxc = vxc + vrho
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc(xc_func(n),int(n_tot,kind=wide),loc_rho(1),sigma(1),exc_array(1),vrho(1),vsigma(1))
+             call xc_f03_gga_exc_vxc(xc_func(n),int(n_tot,kind=wide),loc_rho(1),sigma(1),exc_array(1),vrho(1),vsigma(1))
              vxc = vxc + vrho
              d2term = zero
              vsigma = vsigma*two*drho_dr

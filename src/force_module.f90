@@ -225,6 +225,8 @@ contains
   !!    Add printint forces/stress in ASE output
   !!   2023/01/10 18:41 lionel
   !!    Secure ASE printing when using ordern
+  !!   2025/01/20 17:07 dave
+  !!    Add constraints on stress when constraining cell optimisation
   !!  SOURCE
   !!
   subroutine force(fixed_potential, vary_mu, n_cg_L_iterations, &
@@ -288,7 +290,7 @@ contains
     ! Local variables
     integer        :: i, j, ii, stat, max_atom, max_compt, ispin, &
                       direction, dir1, dir2, counter
-    real(double)   :: max_force, volume, scale, g0
+    real(double)   :: max_force, volume, scale, g0, scaleC
     type(cq_timer) :: tmr_l_tmp1
     type(cq_timer) :: backtrace_timer
     integer        :: backtrace_level
@@ -740,6 +742,28 @@ contains
        else if (leqi(cell_constraint_flag, 'b c') .or. leqi(cell_constraint_flag, 'c b')) then
           stress(2,2) = zero
           stress(3,3) = zero
+       ! These ensure that the stresses maintain the desired ratio while keeping the average fixed
+       else if (leqi(cell_constraint_flag,'a/b') .or. leqi(cell_constraint_flag,'b/a')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcelly/rcellx
+          ! Average x-y stress
+          stress(1,1) = (stress(1,1) + stress(2,2))/(one + scaleC)
+          stress(2,2) = scaleC*stress(1,1)
+       else if (leqi(cell_constraint_flag,'a/c') .or. leqi(cell_constraint_flag,'c/a')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcellz/rcellx
+          ! Average x-z stress
+          stress(1,1) = (stress(1,1) + stress(3,3))/(one + scaleC)
+          stress(3,3) = scaleC*stress(1,1)
+       else if (leqi(cell_constraint_flag,'c/b') .or. leqi(cell_constraint_flag,'b/c')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcelly/rcellz
+          ! Average y-z stress
+          stress(3,3) = (stress(3,3) + stress(2,2))/(one + scaleC)
+          stress(2,2) = scaleC*stress(3,3)
        end if
        ! Output
        if (inode == ionode.AND.iprint_MD + min_layer>2) then

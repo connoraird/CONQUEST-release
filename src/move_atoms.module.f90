@@ -5183,12 +5183,15 @@ contains
   !!  CREATION DATE
   !!   2019/02/08
   !!  MODIFICATION HISTORY
-  !!
+  !!   2025/01/20 13:45 dave
+  !!    Added conditions for fixed cell side ratios (average stresses)
   !!  SOURCE
   subroutine propagate_vector(force, config, config_new, cell_ref, k)
 
     use GenComms,      only: inode, ionode
-    use global_module, only: iprint_MD, ni_in_cell, id_glob
+    use global_module, only: iprint_MD, ni_in_cell, id_glob, cell_constraint_flag
+    use numbers, only: half
+    use input_module,   only: leqi
 
     implicit none
 
@@ -5210,7 +5213,18 @@ contains
       do j=1,3
         config_new(j,i) = config(j,i) + k*force(j,i)
       end do
-    end do
+   end do
+   ! To maintain cell ratios the strains must be equal, so we average them (the most general way)
+   if (leqi(cell_constraint_flag, 'a/b') .OR. leqi(cell_constraint_flag, 'b/a')) then
+      config_new(1,ni_in_cell+1) = half*(config_new(1,ni_in_cell+1) + config_new(2,ni_in_cell+1))
+      config_new(2,ni_in_cell+1) = config_new(1,ni_in_cell+1)
+   else if (leqi(cell_constraint_flag, 'a/c') .OR. leqi(cell_constraint_flag, 'c/a')) then
+      config_new(1,ni_in_cell+1) = half*(config_new(1,ni_in_cell+1) + config_new(3,ni_in_cell+1))
+      config_new(3,ni_in_cell+1) = config_new(1,ni_in_cell+1)
+   else if (leqi(cell_constraint_flag, 'c/b') .OR. leqi(cell_constraint_flag, 'b/c')) then
+      config_new(3,ni_in_cell+1) = half*(config_new(3,ni_in_cell+1) + config_new(2,ni_in_cell+1))
+      config_new(2,ni_in_cell+1) = config_new(3,ni_in_cell+1)
+   end if
 
   end subroutine propagate_vector
   !!***

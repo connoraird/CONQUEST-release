@@ -3064,6 +3064,7 @@ contains
          type_dbl
     use species_module,  only: nsf_species
     use units, only: en_conv, en_units, energy_units
+    use ELPA_module, only: use_elpa, elpa_solver, elpa_kernel, elpa_API
 
     implicit none
 
@@ -3212,6 +3213,42 @@ contains
        write(io_lun,2) block_size_r, block_size_c
        write(io_lun,3) proc_rows, proc_cols
     end if
+ 
+    !Using ELPA or not
+    use_elpa = fdf_boolean('Diag.UseELPA',.false.)
+
+    if( use_elpa ) then
+       elpa_API = fdf_string(8,'Diag.ELPA_API','20241105')
+       elpa_solver = fdf_string(16,'Diag.ELPASolver','ELPA1')
+       select case( elpa_solver )
+        case ("ELPA1")
+          elpa_kernel = "NONE"
+    
+        case ("ELPA2")    
+          elpa_kernel = fdf_string(16,'Diag.ELPA2Kernel','GENERIC')
+    
+          select case( elpa_kernel )
+           case("GENERIC")
+           case("GENERIC_SIMPLE")
+           case("SSE_ASSEMBLY")
+           case("SSE_BLOCK1")
+           case("SSE_BLOCK2")
+           case("AVX_BLOCK1")
+           case("AVX_BLOCK2")
+           case("AVX2_BLOCK1")
+           case("AVX2_BLOCK2")
+           case default
+             call cq_abort("Invalid Diag.ELPA2Kernal " // elpa_kernel )
+          end select
+
+        case default
+          call cq_abort("Invalid Diag.ELPASolver " // elpa_solver )
+       end select
+    else
+       elpa_solver = "NONE"
+       elpa_kernel = "NONE"
+    end if
+
     ! Read k-point mesh type
     mp_mesh = fdf_boolean('Diag.MPMesh',.false.)
     if(.NOT.mp_mesh) then

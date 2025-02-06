@@ -235,10 +235,19 @@ contains
        if(flag_neutral_atom_projector) then
           aNArange        = 31
           NAarange        = 32
-          mx_matrices_tmp = mx_matrices ! = 30
+!!! 2025.02.03 nakata
+!          mx_matrices_tmp = mx_matrices ! = 30
+          mx_matrices_tmp = 32
+!!! 2025.02.03 nakata end
        else
           mx_matrices_tmp = 30
        end if
+!!! 2025.02.03 nakata
+       aSs_in_sSs_range = mx_matrices_tmp + 1
+       sSa_in_sSs_range = mx_matrices_tmp + 2
+       mx_matrices_tmp = mx_matrices_tmp + 2
+       if (mx_matrices_tmp > mx_matrices) call cq_abort('ERROR : mx_matrices_tmp is larger than mx_matrices',mx_matrices_tmp)
+!!! 2025.02.03 nakata end
     endif
 
     !n_my_grid_points = n_pts_in_block * n_blocks    
@@ -371,6 +380,8 @@ contains
           rcut(SFcoeffTr_range) = 0.001_double
        endif
        if (abs(r_LD)<very_small) rcut(LD_range) = 0.001_double
+       rcut(aSs_in_sSs_range) = Srange   !!! 2025.02.03 nakata
+       rcut(sSa_in_sSs_range) = Srange   !!! 2025.02.03 nakata
     endif
     if(flag_neutral_atom_projector) then
        rcut(aNArange)   = r_s_atomf + r_h_atomf
@@ -418,6 +429,8 @@ contains
        mat_name(SFcoeff_range)   = "MS"
        mat_name(SFcoeffTr_range) = "MSt"
        mat_name(LD_range)        = "LD"
+       mat_name(aSs_in_sSs_range) = "aSs_in_sSs"
+       mat_name(sSa_in_sSs_range) = "sSa_in_sSs"
     endif
     if(inode==ionode.AND.iprint_init>1) then
        do n=1,mx_matrices_tmp

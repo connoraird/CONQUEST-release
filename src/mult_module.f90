@@ -100,6 +100,8 @@
 !!    Adding multiplications for NA projectors
 !!   2018/11/13 17:30 nakata
 !!    Changed matS, matT, matTtran, matKE, matNL and matNA to be spin_SF dependent
+!!   2025/02/06 14:00 nakata
+!!    Added aSs_in_sSs_trans, aSs_in_sSs_pairind, sSa_in_sSs_trans, sSa_in_sSs_pairind for pDOS with MSSFs
 !!  SOURCE
 !!
 module mult_module
@@ -176,15 +178,22 @@ module mult_module
   integer :: SFcoeff_trans ! 10
   integer :: aNA_trans     ! 11
   integer :: aNAa_trans    ! 12
+  integer :: aSs_in_sSs_trans ! 13   ! 2025.02.04 nakata
+  integer :: sSa_in_sSs_trans ! 14   ! 2025.02.04 nakata
 
-  integer(integ), parameter :: mx_trans = 12
+!!! 2025.02.03 nakata
+!  integer(integ), parameter :: mx_trans = 12
+  integer(integ), parameter :: mx_trans = 14
+!!! 2025.02.03 nakata end
 
   type(pair_data), allocatable, dimension(:,:) :: pairs
   integer, dimension(:), pointer :: Spairind, Lpairind, Tpairind, &
                                     APpairind, LSpairind, LHpairind, &
                                     LSLpairind, &
                                     aSs_pairind, aHs_pairind, SFcoeff_pairind, &
-                                    aNApairind, aNAapairind
+                                    aNApairind, aNAapairind, &
+                                    aSs_in_sSs_pairind , & !!! 2025.02.03 nakata
+                                    sSa_in_sSs_pairind     !!! 2025.02.03 nakata
 
   type(matrix_trans), dimension(mx_matrices), target :: ltrans
   type(trans_remote) :: gtrans(mx_trans)
@@ -354,6 +363,8 @@ contains
        SFcoeff_trans = 10
        aNA_trans = 11
        aNAa_trans = 12
+       aSs_in_sSs_trans = 13 !!! 2025.02.03 nakata
+       sSa_in_sSs_trans = 14 !!! 2025.02.03 nakata
     else
        aNA_NAa_aHa = 23
        aHa_aNA_aNA = 24
@@ -478,6 +489,18 @@ contains
        call matrix_ini(parts, prim, gcs, mat(1:prim%groups_on_node,SFcoeffTr_range), &
                        SFcoeffTr_matind, rcut(SFcoeffTr_range), myid-1,              &
                        halo(SFcoeffTr_range), ltrans(SFcoeffTr_range))
+!!! 2025.02.03 nakata
+       mat(1:prim%groups_on_node,aSs_in_sSs_range)%sf1_type = atomf
+       mat(1:prim%groups_on_node,aSs_in_sSs_range)%sf2_type = sf
+       call matrix_ini(parts, prim, gcs, mat(1:prim%groups_on_node,aSs_in_sSs_range), &
+                       aSs_in_sSs_matind, rcut(aSs_in_sSs_range), myid-1,              &
+                       halo(aSs_in_sSs_range), ltrans(aSs_in_sSs_range))
+       mat(1:prim%groups_on_node,sSa_in_sSs_range)%sf1_type = sf
+       mat(1:prim%groups_on_node,sSa_in_sSs_range)%sf2_type = atomf
+       call matrix_ini(parts, prim, gcs, mat(1:prim%groups_on_node,sSa_in_sSs_range), &
+                       sSa_in_sSs_matind, rcut(sSa_in_sSs_range), myid-1,              &
+                       halo(sSa_in_sSs_range), ltrans(sSa_in_sSs_range))
+!!! 
        if (flag_LFD) then
           mat(1:prim%groups_on_node,LD_range)%sf1_type = atomf
           mat(1:prim%groups_on_node,LD_range)%sf2_type = atomf
@@ -551,6 +574,14 @@ contains
                myid-1, halo(aHa_range), halo(aHa_range), ltrans(aHa_range),    &
                gtrans(aNAa_trans), pairs(:,aNAa_trans), aNAapairind)
        end if
+!!! 2025.02.03 nakata
+       call trans_ini(parts, prim, gcs, mat(1:prim%groups_on_node,aSs_in_sSs_range),                &
+                      myid-1, halo(aSs_in_sSs_range), halo(sSa_in_sSs_range), ltrans(aSs_in_sSs_range), &
+                      gtrans(aSs_in_sSs_trans), pairs(:, aSs_in_sSs_trans), aSs_in_sSs_pairind)
+       call trans_ini(parts, prim, gcs, mat(1:prim%groups_on_node,sSa_in_sSs_range),                &
+                      myid-1, halo(sSa_in_sSs_range), halo(aSs_in_sSs_range), ltrans(sSa_in_sSs_range), &
+                      gtrans(sSa_in_sSs_trans), pairs(:, sSa_in_sSs_trans), sSa_in_sSs_pairind)
+!!! 2025.02.03 nakata end
     ! NA projectors
     else if(flag_neutral_atom_projector) then
        call trans_ini(parts, prim, gcs, mat(1:prim%groups_on_node,aNArange),     &
@@ -1359,7 +1390,7 @@ contains
     deallocate(pairs)
     deallocate(Spairind, Lpairind, APpairind, LSpairind, LHpairind, &
                LSLpairind, Tpairind)
-    if (atomf.ne.sf) deallocate(aSs_pairind, aHs_pairind, SFcoeff_pairind)
+    if (atomf.ne.sf) deallocate(aSs_pairind, aHs_pairind, SFcoeff_pairind, aSs_in_sSs_pairind)
     if(flag_neutral_atom_projector) then
        deallocate(aNApairind)
        if(atomf.ne.sf) deallocate(aNAapairind)
@@ -1397,6 +1428,7 @@ contains
        call end_ops(prim,SFcoeff_range,SFcoeff_matind,SFcoeff_trans)
        call end_ops(prim,SFcoeffTr_range,SFcoeffTr_matind)
        if (flag_LFD) call end_ops(prim,LD_range,LD_matind)
+       call end_ops(prim,aSs_in_sSs_range,aSs_in_sSs_matind,aSs_in_sSs_trans)
     endif
     if( flag_neutral_atom_projector ) then
        call end_ops(prim,aNArange, aNAmatind,aNA_trans)

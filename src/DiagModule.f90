@@ -503,9 +503,9 @@ contains
          nkpoints_max, pgid, N_procs_in_pg,     &
          N_kpoints_in_pg
     use mult_module,     only: matH, matS, matK, matM12, SF_to_AtomF_transform, &
-         matrix_scale, matrix_product, matrix_product_trace, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
+         matrix_scale, matrix_product, matrix_product_trace, matrix_sum, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
          matSFcoeff_tran, mult, sCaTr_sSs_aSs   !!! 2025.02.03 nakata 
-    use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range   !!! 2025.02.03 nakata
+    use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range, aSs_in_sSs_range   !!! 2025.02.03 nakata
     use primary_module,  only: bundle
     use species_module,  only: species, nsf_species, natomf_species, species_label, n_species !!! 2025.02.03 nakata
     use memory_module,   only: type_dbl, type_int, type_cplx,         &
@@ -538,7 +538,7 @@ contains
          kp, spin, spin_SF, iacc, iprim, l, band, cdft_group, atom_fns_K, &
          n_band_min, n_band_max
     integer :: iatom_spec, Nangmom ! number of orbital angular momentum to be dumped (ex. (s,p,d)=3)
-    integer :: matStmp !!! 2025.02.03 nakata
+    integer :: matStmp, matStmp0, matSFcoeffTran_tmp !!! 2025.02.03 nakata
 
     logical :: flag_keepexcite
 
@@ -851,13 +851,21 @@ contains
                       flag_pDOS_buildK = .true.
                       if (atomf.ne.sf) then
                          flag_WFatomf_buildK = .true.
-                         matStmp = allocate_temp_matrix(aSs_range,0,atomf,sf)
+                         matStmp0 = allocate_temp_matrix(aSs_range,0,atomf,sf)
                          ! call matrix_product(matSatomf, matSFcoeff_tran(spin_SF), matStmp, mult(aSa_sCaTr_aSs))
-                         call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp, mult(sCaTr_sSs_aSs))
+                         call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp0, mult(sCaTr_sSs_aSs))
+                         ! change matSFcoeff_tran and matStmp from aSs_range to sSs_range
+                         matStmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
+                         call matrix_sum(zero,matStmp,one,matStmp0)
+                         matSFcoeffTran_tmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
+                         call matrix_sum(zero,matSFcoeffTran_tmp,one,matSFcoeff_tran(spin_SF))
                          call buildK(Hrange, matK(spin), occ(:,kp,spin), &
                               kk(:,kp), wtk(kp), expH(:,:,spin), &
                               scaledEig, matStmp, &
-                              Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeff_tran(spin_SF))
+                              Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeffTran_tmp)
+                         call free_temp_matrix(matSFcoeffTran_tmp)
+                         call free_temp_matrix(matStmp)
+                         call free_temp_matrix(matStmp0)
                          flag_WFatomf_buildK = .false.
                       else
                          call buildK(Hrange, matK(spin), occ(:,kp,spin), &
@@ -873,9 +881,13 @@ contains
                    else if (atomf.ne.sf) then
                       write(io_lun,*) "test0 before calling buildK for WFs" ! 2025.02.03 nakata
                       flag_WFatomf_buildK = .true.
+                      ! change matSFcoeff_tran from aSs_range to sSs_range
+                      matSFcoeffTran_tmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
+                      call matrix_sum(zero,matSFcoeffTran_tmp,one,matSFcoeff_tran(spin_SF))
                       call buildK(Hrange, matK(spin), occ(:,kp,spin), &
                            kk(:,kp), wtk(kp), expH(:,:,spin), &
-                           Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeff_tran(spin_SF))
+                           Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeffTran_tmp)
+                      call free_temp_matrix(matSFcoeffTran_tmp)
                       flag_WFatomf_buildK = .false.
                       write(io_lun,*) "test0 after calling buildK for WFs" ! 2025.02.03 nakata
                    else

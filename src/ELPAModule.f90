@@ -2,7 +2,7 @@ module ELPA_module
    use datatypes
    use mpi
 !!$   use omp
-!TMP use elpa
+   use elpa
    use GenComms, ONLY: cq_abort, myid
    implicit none
 
@@ -12,7 +12,7 @@ module ELPA_module
    character(len=8) :: elpa_API = "20241105"
    integer :: merow, mecol
 
-!TMP   class(elpa_t), pointer :: elp
+   class(elpa_t), pointer :: elp
 
    private
    public :: use_elpa, elpa_solver, elpa_kernel, elpa_API

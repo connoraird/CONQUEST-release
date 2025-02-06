@@ -276,6 +276,7 @@ module DiagModule
   ! These two flags are used to perform specific calculations in buildK
   ! (projected DOS and Resta polarisation respectively)
   logical :: flag_pDOS_buildK = .false.
+  logical :: flag_WFatomf_buildK = .false.
   logical :: flag_pol_buildS = .false.
 
   !logical :: diagon ! Do we diagonalise or use O(N) ?
@@ -502,10 +503,11 @@ contains
          nkpoints_max, pgid, N_procs_in_pg,     &
          N_kpoints_in_pg
     use mult_module,     only: matH, matS, matK, matM12, SF_to_AtomF_transform, &
-         matrix_scale, matrix_product_trace, allocate_temp_matrix, free_temp_matrix
-    use matrix_data,     only: Hrange, Srange, aHa_range
+         matrix_scale, matrix_product, matrix_product_trace, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
+         matSFcoeff_tran, mult, sCaTr_sSs_aSs   !!! 2025.02.03 nakata 
+    use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range   !!! 2025.02.03 nakata
     use primary_module,  only: bundle
-    use species_module,  only: species, nsf_species, species_label, n_species
+    use species_module,  only: species, nsf_species, natomf_species, species_label, n_species !!! 2025.02.03 nakata
     use memory_module,   only: type_dbl, type_int, type_cplx,         &
          reg_alloc_mem, reg_dealloc_mem
     use energy,          only: entropy
@@ -529,13 +531,14 @@ contains
          bandE_total, coeff, setA, setB, Eband
     real(double), dimension(nspin) :: locc, bandE, entropy_local
     real(double), external         :: dlamch
-    complex(double_cplx), dimension(:,:), allocatable :: scaledEig
+    complex(double_cplx), dimension(:,:), allocatable :: scaledEig, expH_atomf !!! 2025.02.03 nakata
     complex(double_cplx), dimension(:,:,:), allocatable :: expH
     complex(double_cplx) :: c_n_alpha2, c_n_setA2, c_n_setB2
-    integer :: info, stat, il, iu, i, j, m, mz, prim_size, ng, wf_no, &
+    integer :: info, stat, il, iu, i, j, m, mz, prim_size, prim_size_atomf, ng, wf_no, & !!! 2025.02.03 nakata
          kp, spin, spin_SF, iacc, iprim, l, band, cdft_group, atom_fns_K, &
          n_band_min, n_band_max
     integer :: iatom_spec, Nangmom ! number of orbital angular momentum to be dumped (ex. (s,p,d)=3)
+    integer :: matStmp !!! 2025.02.03 nakata
 
     logical :: flag_keepexcite
 
@@ -548,6 +551,12 @@ contains
     do i = 1, bundle%n_prim
        prim_size = prim_size + nsf_species(bundle%species(i))
     end do
+!!! 2025.02.03 nakata
+    prim_size_atomf = 0
+    do i = 1, bundle%n_prim
+       prim_size_atomf = prim_size_atomf + natomf_species(bundle%species(i))
+    end do
+!!! nakata end
 
     ! Initialise - start BLACS, sort out matrices, allocate memory
     call initDiag
@@ -597,13 +606,25 @@ contains
     if (stat /= 0) &
          call cq_abort('FindEvals: failed to alloc expH', stat)
     call reg_alloc_mem(area_DM, matrix_size * prim_size * nspin, type_cplx)
-    if(wf_self_con .and. flag_write_projected_DOS) then
-       allocate(scaledEig(matrix_size,prim_size), STAT=stat)
-       if (stat /= 0) &
-            call cq_abort('FindEvals: failed to alloc scaledEig', stat)
-       call reg_alloc_mem(area_DM, matrix_size * prim_size * nspin, type_cplx)
-       scaledEig = zero
+!!! 2025.02.03 nakata
+    if(wf_self_con) then
+       if (flag_write_projected_DOS) then
+          allocate(scaledEig(matrix_size,prim_size_atomf), STAT=stat)
+          if (stat /= 0) &
+               call cq_abort('FindEvals: failed to alloc scaledEig', stat)
+          call reg_alloc_mem(area_DM, matrix_size * prim_size_atomf * nspin, type_cplx)
+          scaledEig = zero
+       end if
+       if(atomf.ne.sf) then
+          ! expH_atomf: eigenvectors in PAO basis
+          allocate(expH_atomf(matrix_size,prim_size_atomf), STAT=stat)
+          if (stat /= 0) &
+               call cq_abort('FindEvals: failed to alloc expH_atomf', stat)
+          call reg_alloc_mem(area_DM, matrix_size * prim_size_atomf, type_cplx)
+          expH_atomf = zero
+       end if
     end if
+!!! 2025.02.03 nakata end
     !call gcopy(Efermi)
     !call gcopy(occ,matrix_size,nkp)
     ! else
@@ -797,6 +818,7 @@ contains
     ! Second diagonalisation - get eigenvectors and build K
     entropy = zero
     flag_pDOS_buildK = .false.
+    flag_WFatomf_buildK = .false.
     spin_SF = 1
     pol_S_size = maxval(ne_spin_in_cell) ! Size for polarisation matrix
     do spin = 1, nspin
@@ -823,26 +845,57 @@ contains
                      Hrange, matK(spin)
                 ! Output wavefunction coefficients
                 if(wf_self_con .and. (flag_out_wf .or. flag_write_projected_DOS)) then
-                   if(i==1) then
-                      call write_wavefn_coeffs(evals(:,kp,spin),expH(:,:,spin),spin,firstcall=1)
-                   else
-                      call write_wavefn_coeffs(evals(:,kp,spin),expH(:,:,spin),spin)
-                   end if
+                   if (atomf.ne.sf) expH_atomf = zero
                    if(flag_write_projected_DOS) then
                       scaledEig = zero
                       flag_pDOS_buildK = .true.
-                      call buildK(Hrange, matK(spin), occ(:,kp,spin), &
-                           kk(:,kp), wtk(kp), expH(:,:,spin),scaledEig,matS(spin_SF))
+                      if (atomf.ne.sf) then
+                         flag_WFatomf_buildK = .true.
+                         matStmp = allocate_temp_matrix(aSs_range,0,atomf,sf)
+                         ! call matrix_product(matSatomf, matSFcoeff_tran(spin_SF), matStmp, mult(aSa_sCaTr_aSs))
+                         call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp, mult(sCaTr_sSs_aSs))
+                         call buildK(Hrange, matK(spin), occ(:,kp,spin), &
+                              kk(:,kp), wtk(kp), expH(:,:,spin), &
+                              scaledEig, matStmp, &
+                              Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeff_tran(spin_SF))
+                         flag_WFatomf_buildK = .false.
+                      else
+                         call buildK(Hrange, matK(spin), occ(:,kp,spin), &
+                              kk(:,kp), wtk(kp), expH(:,:,spin), &
+                              scaledEig, matS(spin_SF))
+                      endif
                       flag_pDOS_buildK = .false.
                       if(i==1) then
                          call write_wavefn_coeffs(evals(:,kp,spin),scaledEig,spin,tag="Sij",firstcall=1)
                       else
                          call write_wavefn_coeffs(evals(:,kp,spin),scaledEig,spin,tag="Sij")
                       end if
+                   else if (atomf.ne.sf) then
+                      write(io_lun,*) "test0 before calling buildK for WFs" ! 2025.02.03 nakata
+                      flag_WFatomf_buildK = .true.
+                      call buildK(Hrange, matK(spin), occ(:,kp,spin), &
+                           kk(:,kp), wtk(kp), expH(:,:,spin), &
+                           Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeff_tran(spin_SF))
+                      flag_WFatomf_buildK = .false.
+                      write(io_lun,*) "test0 after calling buildK for WFs" ! 2025.02.03 nakata
                    else
                       call buildK(Hrange, matK(spin), occ(:,kp,spin), &
                            kk(:,kp), wtk(kp), expH(:,:,spin))
                    end if
+                   ! write WFs
+                   if (atomf.ne.sf) then ! MSSFs
+                      if(i==1) then
+                         call write_wavefn_coeffs(evals(:,kp,spin),expH_atomf,spin,firstcall=1)
+                      else
+                         call write_wavefn_coeffs(evals(:,kp,spin),expH_atomf,spin)
+                      end if
+                   else   ! primitive PAOs
+                      if(i==1) then
+                         call write_wavefn_coeffs(evals(:,kp,spin),expH(:,:,spin),spin,firstcall=1)
+                      else
+                         call write_wavefn_coeffs(evals(:,kp,spin),expH(:,:,spin),spin)
+                      end if
+                   endif
                 else
                    if(flag_do_pol_calc) then
                       ! Set up polarisation calculation for this spin channel
@@ -895,8 +948,10 @@ contains
                 end do ! j = 1, matrix_size
                 ! Now build data_M12_ij (=-\sum_n eps^n c^n_i c^n_j -
                 ! hence scaling occs by eps allows reuse of buildK)
+                write(io_lun,*) "test 100.0"  !!! 2025.02.03 nakata
                 call buildK(Srange, matM12(spin), occ(:,kp,spin), &
                      kk(:,kp), wtk(kp), expH(:,:,spin))
+                write(io_lun,*) "test 100.1"  !!! 2025.02.03 nakata
              end if ! End if (i <= N_kpoints_in_pg(ng)) then
           end do ! End do ng = 1, proc_groups
        end do ! End do i = 1, nkpoints_max
@@ -969,6 +1024,13 @@ contains
        if (stat /= 0) call cq_abort('FindEvals: failed to deallocacte scaledEig', stat)
        call reg_dealloc_mem(area_DM, matrix_size * prim_size, type_cplx)
     end if
+!!! 2025.02.03 nakata
+    if(wf_self_con .and. (atomf.ne.sf)) then
+       deallocate(expH_atomf, STAT=stat)
+       if (stat /= 0) call cq_abort('FindEvals: failed to deallocacte expH_atomf', stat)
+       call reg_dealloc_mem(area_DM, matrix_size * prim_size_atomf, type_cplx)
+    end if
+!!! 2025.02.03 nakata end
     ! global
     call endDiag
     min_layer = min_layer + 1
@@ -3257,7 +3319,7 @@ contains
   !!    Introduce flag_pol_build_S to select polarisation calculation
   !!  SOURCE
   !!
-  subroutine buildK(range, matA, occs, kps, weight, localEig, overlapEig, matSij)
+  subroutine buildK(range, matA, occs, kps, weight, localEig, overlapEig, matSij, Eig_atomf, matSFcoeffTran)
 
     !use maxima_module, only: mx_nponn, mx_at_prim
     use numbers
@@ -3272,13 +3334,14 @@ contains
     use global_module,   only: numprocs, iprint_DM, id_glob,         &
          ni_in_cell, x_atom_cell, y_atom_cell, &
          z_atom_cell, max_wf, min_layer, flag_do_pol_calc, mat_polX_re, mat_polX_im, &
-         i_pol_dir_st, i_pol_dir_end, wf_self_con, flag_write_projected_DOS, ne_spin_in_cell
+         i_pol_dir_st, i_pol_dir_end, wf_self_con, flag_write_projected_DOS, ne_spin_in_cell, &
+         sf, atomf   !!! 2025.02.03 nakata
     use mpi
     use GenBlas,         only: dot
     use GenComms,        only: myid
     use mult_module,     only: store_matrix_value_pos, matrix_pos, matK, return_matrix_value_pos
     use matrix_data,     only: mat, halo
-    use species_module,  only: nsf_species
+    use species_module,  only: nsf_species, natomf_species !!! 2025.02.03 nakata
 
     implicit none
 
@@ -3291,6 +3354,11 @@ contains
     ! For pDOS
     complex(double_cplx), optional, dimension(:,:) :: overlapEig
     integer, optional :: matSij
+!!! 2025.02.03 nakata 
+    ! For WFs with MSSFs
+    complex(double_cplx), optional, dimension(:,:) :: Eig_atomf
+    integer, optional :: matSFcoeffTran
+!!! 2025.02.03 nakata end
 
     ! Local variables
     type(Krecv_data), dimension(:), allocatable :: recv_info
@@ -3303,14 +3371,14 @@ contains
     integer :: len, send_size, recv_size, send_proc, recv_proc, nsf1, &
          sendtag, recvtag
     integer :: req1, req2, ierr, atom, inter, prim, wheremat, row_sup,&
-         col_sup
+         col_sup, col_atomf   !!! 2025.02.03 nakata
     integer, dimension(:,:), allocatable :: ints, atom_list, &
          send_prim, send_info, send_orbs, send_off
     integer, dimension(:), allocatable :: current_loc_atoms, &
          LocalAtom, num_send, norb_send, send_FSC, recv_to_FSC, &
-         mapchunk, prim_orbs
+         mapchunk, prim_orbs, prim_orbs_atomf !!! 2025.02.03 nakata
     integer, dimension(MPI_STATUS_SIZE) :: mpi_stat
-    real(double) :: phase, rfac, ifac, rcc, icc, rsum, exp_X_value_real, exp_X_value_imag, Siajb
+    real(double) :: phase, rfac, ifac, rcc, icc, rsum, exp_X_value_real, exp_X_value_imag, Siajb, SFcoeffTran_iajb !!! 2025.02.03 nakata
     complex(double_cplx) :: zsum, exp_X_value
     complex(double_cplx), dimension(:,:), allocatable :: RecvBuffer, &
          SendBuffer
@@ -3411,7 +3479,7 @@ contains
          write(io_lun,fmt='(10x,i6,a,3i6)') myid,' Maxima: ',maxloc, maxint, maxsend
     ! Allocate recv_info
     allocate(send_info(numprocs,maxsend),send_orbs(numprocs,maxsend),send_off(numprocs,maxsend), &
-         prim_orbs(bundle%mx_iprim),STAT=stat)
+         prim_orbs(bundle%mx_iprim),prim_orbs_atomf(bundle%mx_iprim),STAT=stat)   !!! 2025.02.03 nakata
     if(stat/=0) call cq_abort('buildK: Error allocating send_info !',stat)
     send_info = 0
     send_orbs = 0
@@ -3422,6 +3490,14 @@ contains
        prim_orbs(j) = orb_count
        orb_count = orb_count + nsf_species(bundle%species(j))
     end do
+!!! 2025.02.03 nakata
+    prim_orbs_atomf = 0
+    orb_count = 0
+    do j=1,bundle%n_prim
+       prim_orbs_atomf(j) = orb_count
+       orb_count = orb_count + natomf_species(bundle%species(j))
+    end do
+!!! 2025.02.03 nakata end
     allocate(recv_info(numprocs),STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating recv_info !',stat)
     do i=1,numprocs
@@ -3504,8 +3580,12 @@ contains
           if(myid==0.AND.iprint_DM + min_layer>=4) write(io_lun,fmt='(10x,a,f8.4)') 'Occ is ',occs(i)
        end if
     end do
+!!! 2025.02.03 nakata
     if(wf_self_con .and. flag_write_projected_DOS) len = matrix_size
+    if(wf_self_con .and. flag_WFatomf_buildK) len = matrix_size
+!!! 2025.02.03 nakata end
     len_occ = len
+    write(io_lun,*) "matrix_size, len, len_occ=", matrix_size, len, len_occ  !!! 2025.02.03 nakata
     if(iprint_DM+min_layer>3.AND.myid==0) &
          write(io_lun,fmt='(10x,a,2i6)') 'buildK: Stage three len:',len, matA
     if(flag_do_pol_calc.AND.flag_pol_buildS) then
@@ -3588,7 +3668,10 @@ contains
           end do
           if(iprint_DM + min_layer>=4.AND.myid==0) &
                write(io_lun,fmt='(10x,a)') 'filling buffer'
-          if(.not.(wf_self_con .and. flag_write_projected_DOS)) then
+!!! 2025.02.03 nakata
+!          if(.not.(wf_self_con .and. flag_write_projected_DOS)) then
+          if(.not.(flag_pDOS_buildK .or. flag_WFatomf_buildK)) then
+!!! 2025.02.03 nakata end
              do j=1,len_occ ! This is a loop over eigenstates
                 RecvBuffer(j,1:recv_info(recv_proc+1)%orbs) = RecvBuffer(j,1:recv_info(recv_proc+1)%orbs)*occ_correction*occs(j)
              end do
@@ -3639,20 +3722,52 @@ contains
                                  polSloc(1:pol_S_size,1:pol_S_size,dir),pol_S_size)
                          end do
                       end if
-                      ! projected DOS
-                      if(flag_pDOS_buildK .and. wf_self_con .and. flag_write_projected_DOS) then
-                         whereMat = matrix_pos(matSij, prim, jatom, col_sup, row_sup)
-                         Siajb = return_matrix_value_pos(matSij,whereMat)
-                         ! 1:len_occ gives bands; we want c_jb^n * S_iajb
-                         overlapEig(1:len_occ,prim_orbs(prim)+col_sup) = &
-                              overlapEig(1:len_occ,prim_orbs(prim)+col_sup) + &
-                              Siajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
-                      end if
+!!! 2025.02.03 nakata pDOS-MSSF
+!                      ! projected DOS
+!                      if(flag_pDOS_buildK .and. wf_self_con .and. flag_write_projected_DOS) then
+!                         whereMat = matrix_pos(matSij, prim, jatom, col_sup, row_sup)
+!                         Siajb = return_matrix_value_pos(matSij,whereMat)
+!                         ! 1:len_occ gives bands; we want c_jb^n * S_iajb
+!                         overlapEig(1:len_occ,prim_orbs(prim)+col_sup) = &
+!                              overlapEig(1:len_occ,prim_orbs(prim)+col_sup) + &
+!                              Siajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
+!                      end if
+!!! 2025.02.03 nakata end
                       ! Build K or M3
                       whereMat = matrix_pos(matA, prim, jatom, col_sup, row_sup)
                       zsum = dot(len_occ,localEig(1:len_occ,prim_orbs(prim)+col_sup),1,RecvBuffer(1:len_occ,orb_count+row_sup),1)
                       call store_matrix_value_pos(matA,whereMat,real(zsum*cmplx(rfac,ifac,double_cplx),double))
                    end do ! col_sup=nsf
+!!! 2025.02.03 nakata pDOS-MSSF
+                   ! projected DOS in atomf basis
+                   if(wf_self_con) then
+                      do col_atomf = 1,natomf_species(bundle%species(prim))
+                         ! c (WF coefficients) in PAO basis
+                         if (flag_WFatomf_buildK .and. (atomf.ne.sf)) then
+                            write(io_lun,*) 'sub:buildK test1'
+                            write(io_lun,'(A,4I3,F20.15)') 'prim, jatom, col_atomf, row_sup', prim, jatom, col_atomf, row_sup
+                            whereMat = matrix_pos(matSFcoeffTran, prim, jatom, col_atomf, row_sup)
+                            write(io_lun,*) 'sub:buildK test1.1'
+                            SFcoeffTran_iajb = return_matrix_value_pos(matSFcoeffTran,whereMat)
+                            write(io_lun,'(A,4I3,F20.15)') 'prim, jatom, col_atomf, row_sup, SFcoeffTran_iajb', prim, jatom, col_atomf, row_sup, SFcoeffTran_iajb
+                            ! 1:len_occ gives bands; we want c_ia(pao)^n = c_jb^n(sf) * SFcoeffTran_iajb(pao,sf)
+                            Eig_atomf(1:len_occ,prim_orbs_atomf(prim)+col_atomf) = &
+                                 Eig_atomf(1:len_occ,prim_orbs_atomf(prim)+col_atomf) + &
+                                 SFcoeffTran_iajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
+                            write(io_lun,*) 'sub:buildK test1.2'
+                         endif
+                         ! c*S for pDOS
+                         if (flag_pDOS_buildK .and.  flag_write_projected_DOS) then
+                            whereMat = matrix_pos(matSij, prim, jatom, col_atomf, row_sup)
+                            Siajb = return_matrix_value_pos(matSij,whereMat)
+                            ! 1:len_occ gives bands; we want d_ia^n = c_jb^n(sf) * S_iajb(pao,sf)
+                            overlapEig(1:len_occ,prim_orbs_atomf(prim)+col_atomf) = &
+                                 overlapEig(1:len_occ,prim_orbs_atomf(prim)+col_atomf) + &
+                                 Siajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
+                         endif
+                      end do ! col_atomf=natomf
+                   end if
+!!! 2025.02.03 nakata end
                 end do ! row_sup=nsf
              end do ! inter=recv_info%ints
              ! Careful - we only want to increment after ALL interactions done
@@ -3685,7 +3800,7 @@ contains
             recv_info(i)%dx,recv_info(i)%dy,recv_info(i)%dz,STAT=stat)
        if(stat/=0) call cq_abort('buildK: Error deallocating recvinfo !',i,stat)
     end do
-    deallocate(prim_orbs,send_off,send_orbs,send_info,STAT=stat)
+    deallocate(prim_orbs_atomf,prim_orbs,send_off,send_orbs,send_info,STAT=stat)   !!! 2025.02.03 nakata
     if(stat/=0) call cq_abort('buildK: Error allocating send_info !',stat)
     deallocate(recv_info,STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating recv_info !',stat)
@@ -4003,6 +4118,10 @@ contains
   !!    Added support for writing out specific bands
   !!   2023/05/10 08:24 dave
   !!    Reworked for post-processing requirements and added binary output option
+  !!   2025/02/03 17:30 nakata
+  !!    Changed nsf_species to natomf_species
+  !!    to write out WFs in PAO-basis rather than SF-basis.
+  !!    WFs with PAO-basis is treatable in PostProcess for both PAOs and MSSFs.
   !!  SOURCE
   !!
   subroutine write_wavefn_coeffs(eval, evec, spin, tag, firstcall)
@@ -4065,10 +4184,10 @@ contains
              acc = 0
              do atom=1,bundle%n_prim
                 write(lun) bundle%ig_prim(atom)
-                do isf1 = 1,nsf_species(bundle%species(atom))
+                do isf1 = 1,natomf_species(bundle%species(atom))
                    write(lun) evec(wf_no,acc+isf1)
                 end do
-                acc = acc + nsf_species(bundle%species(atom))
+                acc = acc + natomf_species(bundle%species(atom))
              end do
           end do ! iwf
        else
@@ -4078,10 +4197,10 @@ contains
                 acc = 0
                 do atom=1,bundle%n_prim
                    write(lun) bundle%ig_prim(atom)
-                   do isf1 = 1,nsf_species(bundle%species(atom))
+                   do isf1 = 1,natomf_species(bundle%species(atom))
                       write(lun) evec(iwf,acc+isf1)
                    end do
-                   acc = acc + nsf_species(bundle%species(atom))
+                   acc = acc + natomf_species(bundle%species(atom))
                 end do
              end if
           end do ! iwf
@@ -4100,10 +4219,10 @@ contains
              acc = 0
              do atom=1,bundle%n_prim
                 write(lun,*) bundle%ig_prim(atom)
-                do isf1 = 1,nsf_species(bundle%species(atom))
+                do isf1 = 1,natomf_species(bundle%species(atom))
                    write(lun,*) evec(wf_no,acc+isf1)
                 end do
-                acc = acc + nsf_species(bundle%species(atom))
+                acc = acc + natomf_species(bundle%species(atom))
              end do
           end do ! iwf
        else
@@ -4113,10 +4232,10 @@ contains
                 acc = 0
                 do atom=1,bundle%n_prim
                    write(lun,*) bundle%ig_prim(atom)
-                   do isf1 = 1,nsf_species(bundle%species(atom))
+                   do isf1 = 1,natomf_species(bundle%species(atom))
                       write(lun,*) evec(iwf,acc+isf1)
                    end do
-                   acc = acc + nsf_species(bundle%species(atom))
+                   acc = acc + natomf_species(bundle%species(atom))
                 end do
              end if
           end do ! iwf

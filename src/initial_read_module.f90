@@ -1765,6 +1765,7 @@ contains
        if(flag_diagonalisation) then
           flag_write_projected_DOS = fdf_boolean('IO.write_proj_DOS',.false.)
           if(flag_write_projected_DOS) then
+             flag_out_wf = .true.   !!! 2025.02.03 nakata
              E_wf_min = fdf_double('IO.min_wf_E',-BIG)
              E_wf_max = fdf_double('IO.max_wf_E',BIG)
           end if

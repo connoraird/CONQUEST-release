@@ -41,11 +41,17 @@ XC_COMPFLAGS = -I/opt/homebrew/Cellar/libxc/6.2.2/include
 FFT_LIB=-lfftw3
 FFT_OBJ=fft_fftw3.o
 
-LIBS= $(FFT_LIB) $(XC_LIB) $(SCALAPACK) $(BLAS)
+# Set ELPA library
+#ELPA_LIB = -L/**/lib -lelpa
+#ELPA_INC = -I/**/modules/
+ELPA_LIB =
+ELPA_INC =
+
+LIBS= $(FFT_LIB) $(ELPA_LIB) $(XC_LIB) $(SCALAPACK) $(BLAS)
 
 # Compilation flags
 # NB for gcc10 you need to add -fallow-argument-mismatch
-COMPFLAGS= -fallow-argument-mismatch -O3 $(OMPFLAGS) $(XC_COMPFLAGS) -I/opt/homebrew/Cellar/openblas/0.3.27/include -I/opt/homebrew/Cellar/lapack/3.12.0/include -I/opt/homebrew/Cellar/fftw/3.3.10_1/include
+COMPFLAGS= -fallow-argument-mismatch -O3 $(OMPFLAGS) $(XC_COMPFLAGS) $(ELPA_INC) -I/opt/homebrew/Cellar/openblas/0.3.27/include -I/opt/homebrew/Cellar/lapack/3.12.0/include -I/opt/homebrew/Cellar/fftw/3.3.10_1/include
 
 # Linking flags
 LINKFLAGS= $(OMPFLAGS) -L/opt/homebrew/Cellar/openblas/0.3.27/lib -L/opt/homebrew/Cellar/lapack/3.12.0/lib -L/opt/homebrew/Cellar/fftw/3.3.10_1/lib -L/opt/homebrew/Cellar/libxc/6.2.2/lib -L/opt/homebrew/Cellar/scalapack/2.2.0_1/lib
@@ -54,3 +60,6 @@ LINKFLAGS= $(OMPFLAGS) -L/opt/homebrew/Cellar/openblas/0.3.27/lib -L/opt/homebre
 MULT_KERN = default
 # Use dummy DiagModule or not
 DIAG_DUMMY =
+# Use dummy ELPAModule or not
+ELPA_DUMMY =DUMMY
+

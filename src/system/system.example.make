@@ -43,8 +43,10 @@ FFT_LIB=-lfftw3
 FFT_OBJ=fft_fftw3.o
 
 # Set ELPA library
-ELPA_LIB = -L/home/app/FREESOFT/elpa/2019.11.001/lib -lelpa
-ELPA_INC = -I/home/app/FREESOFT/elpa/2019.11.001/include/elpa-2019.11.001/modules
+#ELPA_LIB = -L/**/lib -lelpa
+#ELPA_INC = -I/**/modules/
+ELPA_LIB = 
+ELPA_INC = 
 
 LIBS= $(FFT_LIB) $(ELPA_LIB) $(XC_LIB) $(SCALAPACK) $(BLAS)
 
@@ -60,4 +62,4 @@ MULT_KERN = default
 # Use dummy DiagModule or not
 DIAG_DUMMY =
 # Use dummy ELPAModule or not
-ELPA_DUMMY =
+ELPA_DUMMY =DUMMY

@@ -92,7 +92,7 @@ module matrix_data
   integer, dimension(:), pointer :: aSa_matind, aHa_matind, STr_matind, HTr_matind, &
                                     aSs_matind, aHs_matind, sSa_matind, sHa_matind, &
                                     SFcoeff_matind, SFcoeffTr_matind, LD_matind, &
-                                    aSs_in_sSs_matind, sSa_in_sSs_matind !!! 2025.02.03 nakata
+                                    aSs_in_sSs_matind !!! 2025.02.03 nakata
   integer, dimension(:), pointer :: aNAmatind, NAamatind
 
   ! Parameters for the different matrix ranges
@@ -134,7 +134,6 @@ module matrix_data
   integer :: NAarange        ! 32
 !!! 2025.02.03 nakata
   integer :: aSs_in_sSs_range   ! 33 for S(atomf,sf) but with the range of Srange (= r_sf + r_sf, not r_atomf + r_sf)
-  integer :: sSa_in_sSs_range   ! 34 for S(sf,atomf) but with the range of Srange (= r_sf + r_sf, not r_atomf + r_sf)
 !!! 2025.02.03 nakata end
 
   integer :: max_range ! Indexes matrix with largest range

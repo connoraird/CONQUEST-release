@@ -118,7 +118,8 @@ contains
        i_job = 2
     else if(leqi(job,'ban')) then
        i_job = 3
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
+!!! nakata 2025.02.03 comment out
+!       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
     else if(leqi(job,'ter').or.leqi(job,'th')) then
        i_job = 4
        if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")

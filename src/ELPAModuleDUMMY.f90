@@ -4,10 +4,10 @@ module ELPA_module
    use GenComms, ONLY: cq_abort, myid
    implicit none
 
-   logical :: use_elpa = .false.  ! always true in this module
+   logical :: use_elpa = .false.  ! This should be false for ELPAModuleDummy
    character(len=16) :: elpa_solver = "ELPA1" ! ELPA1 or ELPA2
    character(len=16) :: elpa_kernel = "GENERIC"
-   character(len=8) :: elpa_API = "20241105"
+   integer :: elpa_API = 20241105
    integer :: merow, mecol
 
    private

@@ -3,14 +3,15 @@ module ELPA_module
    use mpi
 !!$   use omp
    use elpa
-   use GenComms, ONLY: cq_abort, myid
+   use GenComms, ONLY: cq_abort, cq_warn, myid
    implicit none
 
-   logical :: use_elpa = .false.  ! always true in this module
+   logical :: use_elpa = .false.  ! whether we use ELPA or not
    character(len=16) :: elpa_solver = "ELPA1" ! ELPA1 or ELPA2
    character(len=16) :: elpa_kernel = "GENERIC"
-   character(len=8) :: elpa_API = "20241105"
+   integer :: elpa_API = 20241105
    integer :: merow, mecol
+   character(len=12) :: subname = "init_ELPA:  "
 
    class(elpa_t), pointer :: elp
 
@@ -42,17 +43,18 @@ contains
        call blacs_gridinfo( context, numrows, numcols, merow, mecol )
 
       if( mod(numcols,numrows) /= 0 ) then ! restriction for ELPA
-         call cq_abort("Diag.ProcRows is not a factor of Diag.ProcCols !",numrows,numcols)
+         call cq_warn(subname,"Diag.ProcRows is not a factor of Diag.ProcCols !",numrows,numcols)
       end if
 
       if( matrix_size <= block_size_r*numrows ) then ! restriction for ELPA
-         call cq_abort("Diag.BlockSizeR should be less than or equal to", (matrix_size-1)/proc_rows )
+         call cq_abort("Diag.BlockSizeR should be less than or equal to", (matrix_size-1)/numrows )
       end if
       if( matrix_size <= block_size_c*numcols ) then ! restriction for ELPA
-         call cq_abort("Diag.BlockSizeC should be less than or rqual to", (matrix_size-1)/proc_cols )
+         call cq_abort("Diag.BlockSizeC should be less than or rqual to", (matrix_size-1)/numcols )
       end if
 
       info = elpa_init(elpa_API)
+      !info = elpa_init(20181113)
        if( info /= ELPA_OK ) call cq_abort("ELPA_Init: ELPA API version not supported")
 
       elp => elpa_allocate(info)

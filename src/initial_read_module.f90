@@ -3218,7 +3218,7 @@ contains
     use_elpa = fdf_boolean('Diag.UseELPA',.false.)
 
     if( use_elpa ) then
-       elpa_API = fdf_string(8,'Diag.ELPA_API','20241105')
+       elpa_API = fdf_integer('Diag.ELPA_API',20181113)
        elpa_solver = fdf_string(16,'Diag.ELPASolver','ELPA1')
        select case( elpa_solver )
         case ("ELPA1")

@@ -41,11 +41,17 @@ XC_COMPFLAGS =
 FFT_LIB=-L$(FFTW_ROOT)/lib -lfftw3
 FFT_OBJ=fft_fftw3.o
 
-LIBS= $(FFT_LIB) $(XC_LIB) $(BLAS)
+# Set ELPA library
+#ELPA_LIB = -L/**/lib -lelpa
+#ELPA_INC = -I/**/modules/
+ELPA_LIB =
+ELPA_INC =
+
+LIBS= $(FFT_LIB) $(ELPA_LIB) $(XC_LIB) $(BLAS)
 
 # Compilation flags
 # NB for gcc10 you need to add -fallow-argument-mismatch
-COMPFLAGS= -O3 -fallow-argument-mismatch -fopenmp  $(XC_COMPFLAGS)
+COMPFLAGS= -O3 -fallow-argument-mismatch -fopenmp  $(XC_COMPFLAGS) $(ELPA_INC)
 
 # Linking flags
 LINKFLAGS=  -fopenmp -L$(LIBSCI_BASE_DIR)/gnu/9.1/x86_64/lib -lsci_gnu_mpi -lsci_gnu
@@ -55,3 +61,5 @@ LINKFLAGS=  -fopenmp -L$(LIBSCI_BASE_DIR)/gnu/9.1/x86_64/lib -lsci_gnu_mpi -lsci
 MULT_KERN = ompGemm_m
 # Use dummy DiagModule or not
 DIAG_DUMMY =
+# Use dummy ELPAModule or not
+ELPA_DUMMY =DUMMY

@@ -3064,6 +3064,7 @@ contains
          type_dbl
     use species_module,  only: nsf_species
     use units, only: en_conv, en_units, energy_units
+    use ELPA_module, only: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy
 
     implicit none
 
@@ -3212,6 +3213,34 @@ contains
        write(io_lun,2) block_size_r, block_size_c
        write(io_lun,3) proc_rows, proc_cols
     end if
+ 
+    !Using ELPA or not
+    flag_use_elpa = fdf_boolean('Diag.UseELPA',.false.)
+
+    if( flag_use_elpa ) then
+       if(flag_elpa_dummy) call cq_abort("Code compiled without ELPA! Set Diag.UseELPA F")
+       elpa_API = fdf_integer('Diag.ELPA_API',20181113)
+       elpa_solver = fdf_string(16,'Diag.ELPASolver','ELPA1')
+       if(leqi(elpa_solver,'ELPA1')) then
+          elpa_kernel = "NONE"
+       else if(leqi(elpa_solver,'ELPA2')) then
+          elpa_kernel = fdf_string(16,'Diag.ELPA2Kernel','GENERIC')
+          ! Check for a valid kernel
+          if(.not.(leqi(elpa_kernel,'GENERIC').OR.leqi(elpa_kernel,"GENERIC_SIMPLE") &
+               .OR.leqi(elpa_kernel,"SSE_ASSEMBLY").OR.leqi(elpa_kernel,"SSE_BLOCK1") &
+               .OR.leqi(elpa_kernel,"SSE_BLOCK2").OR.leqi(elpa_kernel,"AVX_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX_BLOCK2").OR.leqi(elpa_kernel,"AVX2_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX2_BLOCK2"))) then
+             call cq_abort("Invalid Diag.ELPA2Kernel " // elpa_kernel )
+          endif
+       else
+          call cq_abort("Invalid Diag.ELPASolver " // elpa_solver )
+       endif
+    else
+       elpa_solver = "NONE"
+       elpa_kernel = "NONE"
+    end if
+
     ! Read k-point mesh type
     mp_mesh = fdf_boolean('Diag.MPMesh',.false.)
     if(.NOT.mp_mesh) then

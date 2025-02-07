@@ -517,7 +517,7 @@ contains
     use density_module, ONLY: get_band_density
     use io_module, ONLY: write_eigenvalues, write_eigenvalues_format_ase
     use pao_format, ONLY: pao
-    use ELPA_module, ONLY: use_elpa,init_ELPA, end_ELPA
+    use ELPA_module, ONLY: flag_use_elpa, init_ELPA, end_ELPA
 
     implicit none
 
@@ -552,8 +552,8 @@ contains
 
     ! Initialise - start BLACS, sort out matrices, allocate memory
     call initDiag
-    if(use_elpa) then
-     call init_ELPA(matrix_size_padH, row_size, col_size, desca, info )
+    if(flag_use_elpa) then
+       call init_ELPA(matrix_size_padH, row_size, col_size, desca, info )
     endif
 
     scale = one / real(N_procs_in_pg(pgid), double)
@@ -975,7 +975,7 @@ contains
     end if
     ! global
     call endDiag
-    if(use_elpa) call end_ELPA(info)
+    if(flag_use_elpa) call end_ELPA(info)
 
     min_layer = min_layer + 1
     return
@@ -1056,7 +1056,6 @@ contains
     use GenComms,        only: my_barrier, cq_abort, myid
     use memory_module,   only: type_dbl, type_int, type_cplx,         &
          reg_alloc_mem, reg_dealloc_mem
-    use ELPA_module,     only: end_ELPA
 
     implicit none
 
@@ -4239,7 +4238,7 @@ contains
          block_size_r, block_size_c, blocks_r, blocks_c, procid, pgroup,&
          nkpoints_max, pgid, N_kpoints_in_pg, pg_kpoints, N_procs_in_pg, proc_groups
     use GenComms,        only: cq_warn
-    use ELPA_module,     only: use_elpa,ELPA_zhegv
+    use ELPA_module,     only: flag_use_elpa, ELPA_zhegv
 
     implicit none
 
@@ -4306,16 +4305,16 @@ contains
 
        ! Call the diagonalisation routine for generalised problem
        ! H.psi = E.S.psi
-       if( use_elpa ) then
-        call ELPA_zhegv(mode, matrix_size_padH, row_size, col_size, &
-            SCHmat(:,:,spin), SCSmat(:,:,spin), local_evals(:,spin), z(:,:,spin), info )
+       if( flag_use_elpa ) then
+          call ELPA_zhegv(mode, matrix_size_padH, row_size, col_size, &
+               SCHmat(:,:,spin), SCSmat(:,:,spin), local_evals(:,spin), z(:,:,spin), info )
        else
-        call pzhegvx(1, mode, 'A', 'U', matrix_size_padH, SCHmat(:,:,spin), &
-            1, 1, desca, SCSmat(:,:,spin), 1, 1, descb,      &
-            vl, vu, il, iu, abstol, m, mz, local_evals(:,spin),  &
-            orfac, z(:,:,spin), 1, 1, descz, work, lwork,    &
-            rwork, lrwork, iwork, liwork, ifail, iclustr,    &
-            gap, info)
+          call pzhegvx(1, mode, 'A', 'U', matrix_size_padH, SCHmat(:,:,spin), &
+               1, 1, desca, SCSmat(:,:,spin), 1, 1, descb,      &
+               vl, vu, il, iu, abstol, m, mz, local_evals(:,spin),  &
+               orfac, z(:,:,spin), 1, 1, descz, work, lwork,    &
+               rwork, lrwork, iwork, liwork, ifail, iclustr,    &
+               gap, info)
        endif
 
        if (info /= 0) then

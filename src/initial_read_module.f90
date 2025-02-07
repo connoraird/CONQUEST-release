@@ -3064,7 +3064,7 @@ contains
          type_dbl
     use species_module,  only: nsf_species
     use units, only: en_conv, en_units, energy_units
-    use ELPA_module, only: use_elpa, elpa_solver, elpa_kernel, elpa_API
+    use ELPA_module, only: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy
 
     implicit none
 
@@ -3215,35 +3215,27 @@ contains
     end if
  
     !Using ELPA or not
-    use_elpa = fdf_boolean('Diag.UseELPA',.false.)
+    flag_use_elpa = fdf_boolean('Diag.UseELPA',.false.)
 
-    if( use_elpa ) then
+    if( flag_use_elpa ) then
+       if(flag_elpa_dummy) call cq_abort("Code compiled without ELPA! Set Diag.UseELPA F")
        elpa_API = fdf_integer('Diag.ELPA_API',20181113)
        elpa_solver = fdf_string(16,'Diag.ELPASolver','ELPA1')
-       select case( elpa_solver )
-        case ("ELPA1")
+       if(leqi(elpa_solver,'ELPA1')) then
           elpa_kernel = "NONE"
-    
-        case ("ELPA2")    
+       else if(leqi(elpa_solver,'ELPA2')) then
           elpa_kernel = fdf_string(16,'Diag.ELPA2Kernel','GENERIC')
-    
-          select case( elpa_kernel )
-           case("GENERIC")
-           case("GENERIC_SIMPLE")
-           case("SSE_ASSEMBLY")
-           case("SSE_BLOCK1")
-           case("SSE_BLOCK2")
-           case("AVX_BLOCK1")
-           case("AVX_BLOCK2")
-           case("AVX2_BLOCK1")
-           case("AVX2_BLOCK2")
-           case default
-             call cq_abort("Invalid Diag.ELPA2Kernal " // elpa_kernel )
-          end select
-
-        case default
+          ! Check for a valid kernel
+          if(.not.(leqi(elpa_kernel,'GENERIC').OR.leqi(elpa_kernel,"GENERIC_SIMPLE") &
+               .OR.leqi(elpa_kernel,"SSE_ASSEMBLY").OR.leqi(elpa_kernel,"SSE_BLOCK1") &
+               .OR.leqi(elpa_kernel,"SSE_BLOCK2").OR.leqi(elpa_kernel,"AVX_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX_BLOCK2").OR.leqi(elpa_kernel,"AVX2_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX2_BLOCK2"))) then
+             call cq_abort("Invalid Diag.ELPA2Kernel " // elpa_kernel )
+          endif
+       else
           call cq_abort("Invalid Diag.ELPASolver " // elpa_solver )
-       end select
+       endif
     else
        elpa_solver = "NONE"
        elpa_kernel = "NONE"

@@ -502,9 +502,9 @@ contains
          block_size_c, pg_kpoints, proc_groups, &
          nkpoints_max, pgid, N_procs_in_pg,     &
          N_kpoints_in_pg
-    use mult_module,     only: matH, matS, matK, matM12, SF_to_AtomF_transform, &
+    use mult_module,     only: matH, matS, matK, matM12, &
          matrix_scale, matrix_product, matrix_product_trace, matrix_sum, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
-         matSFcoeff_tran, mult, sCaTr_sSs_aSs, aSa_sCaTr_aSs, matSatomF   !!! 2025.02.03 nakata 
+         matSFcoeff_tran, mult, aSa_sCaTr_aSs, matSatomF   !!! 2025.02.03 nakata 
     use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range, aSs_in_sSs_range   !!! 2025.02.03 nakata
     use primary_module,  only: bundle
     use species_module,  only: species, nsf_species, natomf_species, species_label, n_species !!! 2025.02.03 nakata
@@ -853,7 +853,6 @@ contains
                          flag_WFatomf_buildK = .true.
                          matStmp0 = allocate_temp_matrix(aSs_range,0,atomf,sf)
                          call matrix_product(matSatomf, matSFcoeff_tran(spin_SF), matStmp0, mult(aSa_sCaTr_aSs))
-                         !call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp0, mult(sCaTr_sSs_aSs))
                          ! change matSFcoeff_tran and matStmp from aSs_range to sSs_range
                          matStmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
                          call matrix_sum(zero,matStmp,one,matStmp0)
@@ -879,7 +878,6 @@ contains
                          call write_wavefn_coeffs(evals(:,kp,spin),scaledEig,spin,tag="Sij")
                       end if
                    else if (atomf.ne.sf) then
-                      write(io_lun,*) "test0 before calling buildK for WFs" ! 2025.02.03 nakata
                       flag_WFatomf_buildK = .true.
                       ! change matSFcoeff_tran from aSs_range to sSs_range
                       matSFcoeffTran_tmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
@@ -889,7 +887,6 @@ contains
                            Eig_atomf=expH_atomf, matSFcoeffTran=matSFcoeffTran_tmp)
                       call free_temp_matrix(matSFcoeffTran_tmp)
                       flag_WFatomf_buildK = .false.
-                      write(io_lun,*) "test0 after calling buildK for WFs" ! 2025.02.03 nakata
                    else
                       call buildK(Hrange, matK(spin), occ(:,kp,spin), &
                            kk(:,kp), wtk(kp), expH(:,:,spin))
@@ -960,10 +957,8 @@ contains
                 end do ! j = 1, matrix_size
                 ! Now build data_M12_ij (=-\sum_n eps^n c^n_i c^n_j -
                 ! hence scaling occs by eps allows reuse of buildK)
-                write(io_lun,*) "test 100.0"  !!! 2025.02.03 nakata
                 call buildK(Srange, matM12(spin), occ(:,kp,spin), &
                      kk(:,kp), wtk(kp), expH(:,:,spin))
-                write(io_lun,*) "test 100.1"  !!! 2025.02.03 nakata
              end if ! End if (i <= N_kpoints_in_pg(ng)) then
           end do ! End do ng = 1, proc_groups
        end do ! End do i = 1, nkpoints_max
@@ -3597,7 +3592,6 @@ contains
     if(wf_self_con .and. flag_WFatomf_buildK) len = matrix_size
 !!! 2025.02.03 nakata end
     len_occ = len
-    write(io_lun,*) "matrix_size, len, len_occ=", matrix_size, len, len_occ  !!! 2025.02.03 nakata
     if(iprint_DM+min_layer>3.AND.myid==0) &
          write(io_lun,fmt='(10x,a,2i6)') 'buildK: Stage three len:',len, matA
     if(flag_do_pol_calc.AND.flag_pol_buildS) then
@@ -3756,17 +3750,12 @@ contains
                       do col_atomf = 1,natomf_species(bundle%species(prim))
                          ! c (WF coefficients) in PAO basis
                          if (flag_WFatomf_buildK .and. (atomf.ne.sf)) then
-                            write(io_lun,*) 'sub:buildK test1'
-                            write(io_lun,'(A,4I3,F20.15)') 'prim, jatom, col_atomf, row_sup', prim, jatom, col_atomf, row_sup
                             whereMat = matrix_pos(matSFcoeffTran, prim, jatom, col_atomf, row_sup)
-                            write(io_lun,*) 'sub:buildK test1.1'
                             SFcoeffTran_iajb = return_matrix_value_pos(matSFcoeffTran,whereMat)
-                            write(io_lun,'(A,4I3,F20.15)') 'prim, jatom, col_atomf, row_sup, SFcoeffTran_iajb', prim, jatom, col_atomf, row_sup, SFcoeffTran_iajb
                             ! 1:len_occ gives bands; we want c_ia(pao)^n = c_jb^n(sf) * SFcoeffTran_iajb(pao,sf)
                             Eig_atomf(1:len_occ,prim_orbs_atomf(prim)+col_atomf) = &
                                  Eig_atomf(1:len_occ,prim_orbs_atomf(prim)+col_atomf) + &
                                  SFcoeffTran_iajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
-                            write(io_lun,*) 'sub:buildK test1.2'
                          endif
                          ! c*S for pDOS
                          if (flag_pDOS_buildK .and.  flag_write_projected_DOS) then

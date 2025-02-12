@@ -504,7 +504,7 @@ contains
          N_kpoints_in_pg
     use mult_module,     only: matH, matS, matK, matM12, SF_to_AtomF_transform, &
          matrix_scale, matrix_product, matrix_product_trace, matrix_sum, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
-         matSFcoeff_tran, mult, sCaTr_sSs_aSs   !!! 2025.02.03 nakata 
+         matSFcoeff_tran, mult, sCaTr_sSs_aSs, aSa_sCaTr_aSs, matSatomF   !!! 2025.02.03 nakata 
     use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range, aSs_in_sSs_range   !!! 2025.02.03 nakata
     use primary_module,  only: bundle
     use species_module,  only: species, nsf_species, natomf_species, species_label, n_species !!! 2025.02.03 nakata
@@ -852,8 +852,8 @@ contains
                       if (atomf.ne.sf) then
                          flag_WFatomf_buildK = .true.
                          matStmp0 = allocate_temp_matrix(aSs_range,0,atomf,sf)
-                         ! call matrix_product(matSatomf, matSFcoeff_tran(spin_SF), matStmp, mult(aSa_sCaTr_aSs))
-                         call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp0, mult(sCaTr_sSs_aSs))
+                         call matrix_product(matSatomf, matSFcoeff_tran(spin_SF), matStmp0, mult(aSa_sCaTr_aSs))
+                         !call matrix_product(matSFcoeff_tran(spin_SF), matS(spin_SF), matStmp0, mult(sCaTr_sSs_aSs))
                          ! change matSFcoeff_tran and matStmp from aSs_range to sSs_range
                          matStmp = allocate_temp_matrix(aSs_in_sSs_range,0,atomf,sf)
                          call matrix_sum(zero,matStmp,one,matStmp0)

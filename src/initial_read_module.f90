@@ -807,6 +807,8 @@ contains
   !!     Update test for solution method (diagon vs ordern) following issue #47
   !!   2024/12/03 lionel
   !!     Added grid specification of EXX coarse/standard/fine
+  !!   2025/02/03 nakata
+  !!     Set flag_out_wf = .true. expricitly when flag_write_projected_DOS is .true.
   !!  TODO
   !!  SOURCE
   !!
@@ -1765,7 +1767,7 @@ contains
        if(flag_diagonalisation) then
           flag_write_projected_DOS = fdf_boolean('IO.write_proj_DOS',.false.)
           if(flag_write_projected_DOS) then
-             flag_out_wf = .true.   !!! 2025.02.03 nakata
+             flag_out_wf = .true.
              E_wf_min = fdf_double('IO.min_wf_E',-BIG)
              E_wf_max = fdf_double('IO.max_wf_E',BIG)
           end if

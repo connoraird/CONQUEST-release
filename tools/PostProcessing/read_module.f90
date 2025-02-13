@@ -118,16 +118,12 @@ contains
        i_job = 2
     else if(leqi(job,'ban')) then
        i_job = 3
-!!! nakata 2025.02.03 comment out
-!       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
     else if(leqi(job,'ter').or.leqi(job,'th')) then
        i_job = 4
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
        ! Allow user to specify output filename
        root_file = fdf_string(50,'Process.RootFile','STM')
     else if(leqi(job,'stm')) then
        i_job = 5
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
        ! Allow user to specify output filename
        root_file = fdf_string(50,'Process.RootFile','STM')
     else if(leqi(job,'dos')) then

@@ -478,6 +478,8 @@ contains
   !!   2023/03/15 08:37 dave
   !!    Removed pDOS output (now done in post-processing) and added calls
   !!    for wavefunction coefficients scaled by overlap matrix (for pDOS)
+  !!   2025/02/13 17:30 dave and nakata
+  !!    Introduced expH_atomf and flag_WFatomf_buildK for pDOS with MSSFs
   !!  SOURCE
   !!
   subroutine FindEvals(electrons)
@@ -503,11 +505,11 @@ contains
          nkpoints_max, pgid, N_procs_in_pg,     &
          N_kpoints_in_pg
     use mult_module,     only: matH, matS, matK, matM12, &
-         matrix_scale, matrix_product, matrix_product_trace, matrix_sum, allocate_temp_matrix, free_temp_matrix, & !!! 2025.02.03 nakata
-         matSFcoeff_tran, mult, aSa_sCaTr_aSs, matSatomF   !!! 2025.02.03 nakata 
-    use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range, aSs_in_sSs_range   !!! 2025.02.03 nakata
+         matrix_scale, matrix_product, matrix_product_trace, matrix_sum, allocate_temp_matrix, free_temp_matrix, &
+         matSFcoeff_tran, mult, aSa_sCaTr_aSs, matSatomf
+    use matrix_data,     only: Hrange, Srange, aHa_range, aSs_range, aSs_in_sSs_range
     use primary_module,  only: bundle
-    use species_module,  only: species, nsf_species, natomf_species, species_label, n_species !!! 2025.02.03 nakata
+    use species_module,  only: species, nsf_species, natomf_species, species_label, n_species
     use memory_module,   only: type_dbl, type_int, type_cplx,         &
          reg_alloc_mem, reg_dealloc_mem
     use energy,          only: entropy
@@ -531,14 +533,14 @@ contains
          bandE_total, coeff, setA, setB, Eband
     real(double), dimension(nspin) :: locc, bandE, entropy_local
     real(double), external         :: dlamch
-    complex(double_cplx), dimension(:,:), allocatable :: scaledEig, expH_atomf !!! 2025.02.03 nakata
+    complex(double_cplx), dimension(:,:), allocatable :: scaledEig, expH_atomf
     complex(double_cplx), dimension(:,:,:), allocatable :: expH
     complex(double_cplx) :: c_n_alpha2, c_n_setA2, c_n_setB2
-    integer :: info, stat, il, iu, i, j, m, mz, prim_size, prim_size_atomf, ng, wf_no, & !!! 2025.02.03 nakata
+    integer :: info, stat, il, iu, i, j, m, mz, prim_size, prim_size_atomf, ng, wf_no, &
          kp, spin, spin_SF, iacc, iprim, l, band, cdft_group, atom_fns_K, &
          n_band_min, n_band_max
     integer :: iatom_spec, Nangmom ! number of orbital angular momentum to be dumped (ex. (s,p,d)=3)
-    integer :: matStmp, matStmp0, matSFcoeffTran_tmp !!! 2025.02.03 nakata
+    integer :: matStmp, matStmp0, matSFcoeffTran_tmp
 
     logical :: flag_keepexcite
 
@@ -551,12 +553,10 @@ contains
     do i = 1, bundle%n_prim
        prim_size = prim_size + nsf_species(bundle%species(i))
     end do
-!!! 2025.02.03 nakata
     prim_size_atomf = 0
     do i = 1, bundle%n_prim
        prim_size_atomf = prim_size_atomf + natomf_species(bundle%species(i))
     end do
-!!! nakata end
 
     ! Initialise - start BLACS, sort out matrices, allocate memory
     call initDiag
@@ -606,7 +606,6 @@ contains
     if (stat /= 0) &
          call cq_abort('FindEvals: failed to alloc expH', stat)
     call reg_alloc_mem(area_DM, matrix_size * prim_size * nspin, type_cplx)
-!!! 2025.02.03 nakata
     if(wf_self_con) then
        if (flag_write_projected_DOS) then
           allocate(scaledEig(matrix_size,prim_size_atomf), STAT=stat)
@@ -624,7 +623,6 @@ contains
           expH_atomf = zero
        end if
     end if
-!!! 2025.02.03 nakata end
     !call gcopy(Efermi)
     !call gcopy(occ,matrix_size,nkp)
     ! else
@@ -1031,13 +1029,11 @@ contains
        if (stat /= 0) call cq_abort('FindEvals: failed to deallocacte scaledEig', stat)
        call reg_dealloc_mem(area_DM, matrix_size * prim_size, type_cplx)
     end if
-!!! 2025.02.03 nakata
     if(wf_self_con .and. (atomf.ne.sf)) then
        deallocate(expH_atomf, STAT=stat)
        if (stat /= 0) call cq_abort('FindEvals: failed to deallocacte expH_atomf', stat)
        call reg_dealloc_mem(area_DM, matrix_size * prim_size_atomf, type_cplx)
     end if
-!!! 2025.02.03 nakata end
     ! global
     call endDiag
     min_layer = min_layer + 1
@@ -3324,6 +3320,8 @@ contains
   !!    Add possibility to calculate S_{ij}.c^n_j for pDOS calculation post-processing
   !!   2023/06/08 15:38 dave
   !!    Introduce flag_pol_build_S to select polarisation calculation
+  !!   2025/02/13 17:30 dave and nakata
+  !!    Introduce flag_WFatomf_buildK and Eig_atomf for pDOS with MSSFs
   !!  SOURCE
   !!
   subroutine buildK(range, matA, occs, kps, weight, localEig, overlapEig, matSij, Eig_atomf, matSFcoeffTran)
@@ -3342,13 +3340,13 @@ contains
          ni_in_cell, x_atom_cell, y_atom_cell, &
          z_atom_cell, max_wf, min_layer, flag_do_pol_calc, mat_polX_re, mat_polX_im, &
          i_pol_dir_st, i_pol_dir_end, wf_self_con, flag_write_projected_DOS, ne_spin_in_cell, &
-         sf, atomf   !!! 2025.02.03 nakata
+         sf, atomf
     use mpi
     use GenBlas,         only: dot
     use GenComms,        only: myid
     use mult_module,     only: store_matrix_value_pos, matrix_pos, matK, return_matrix_value_pos
     use matrix_data,     only: mat, halo
-    use species_module,  only: nsf_species, natomf_species !!! 2025.02.03 nakata
+    use species_module,  only: nsf_species, natomf_species
 
     implicit none
 
@@ -3361,11 +3359,9 @@ contains
     ! For pDOS
     complex(double_cplx), optional, dimension(:,:) :: overlapEig
     integer, optional :: matSij
-!!! 2025.02.03 nakata 
     ! For WFs with MSSFs
     complex(double_cplx), optional, dimension(:,:) :: Eig_atomf
     integer, optional :: matSFcoeffTran
-!!! 2025.02.03 nakata end
 
     ! Local variables
     type(Krecv_data), dimension(:), allocatable :: recv_info
@@ -3378,14 +3374,14 @@ contains
     integer :: len, send_size, recv_size, send_proc, recv_proc, nsf1, &
          sendtag, recvtag
     integer :: req1, req2, ierr, atom, inter, prim, wheremat, row_sup,&
-         col_sup, col_atomf   !!! 2025.02.03 nakata
+         col_sup, col_atomf
     integer, dimension(:,:), allocatable :: ints, atom_list, &
          send_prim, send_info, send_orbs, send_off
     integer, dimension(:), allocatable :: current_loc_atoms, &
          LocalAtom, num_send, norb_send, send_FSC, recv_to_FSC, &
-         mapchunk, prim_orbs, prim_orbs_atomf !!! 2025.02.03 nakata
+         mapchunk, prim_orbs, prim_orbs_atomf
     integer, dimension(MPI_STATUS_SIZE) :: mpi_stat
-    real(double) :: phase, rfac, ifac, rcc, icc, rsum, exp_X_value_real, exp_X_value_imag, Siajb, SFcoeffTran_iajb !!! 2025.02.03 nakata
+    real(double) :: phase, rfac, ifac, rcc, icc, rsum, exp_X_value_real, exp_X_value_imag, Siajb, SFcoeffTran_iajb
     complex(double_cplx) :: zsum, exp_X_value
     complex(double_cplx), dimension(:,:), allocatable :: RecvBuffer, &
          SendBuffer
@@ -3486,7 +3482,7 @@ contains
          write(io_lun,fmt='(10x,i6,a,3i6)') myid,' Maxima: ',maxloc, maxint, maxsend
     ! Allocate recv_info
     allocate(send_info(numprocs,maxsend),send_orbs(numprocs,maxsend),send_off(numprocs,maxsend), &
-         prim_orbs(bundle%mx_iprim),prim_orbs_atomf(bundle%mx_iprim),STAT=stat)   !!! 2025.02.03 nakata
+         prim_orbs(bundle%mx_iprim),prim_orbs_atomf(bundle%mx_iprim),STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating send_info !',stat)
     send_info = 0
     send_orbs = 0
@@ -3497,14 +3493,12 @@ contains
        prim_orbs(j) = orb_count
        orb_count = orb_count + nsf_species(bundle%species(j))
     end do
-!!! 2025.02.03 nakata
     prim_orbs_atomf = 0
     orb_count = 0
     do j=1,bundle%n_prim
        prim_orbs_atomf(j) = orb_count
        orb_count = orb_count + natomf_species(bundle%species(j))
     end do
-!!! 2025.02.03 nakata end
     allocate(recv_info(numprocs),STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating recv_info !',stat)
     do i=1,numprocs
@@ -3587,10 +3581,8 @@ contains
           if(myid==0.AND.iprint_DM + min_layer>=4) write(io_lun,fmt='(10x,a,f8.4)') 'Occ is ',occs(i)
        end if
     end do
-!!! 2025.02.03 nakata
     if(wf_self_con .and. flag_write_projected_DOS) len = matrix_size
     if(wf_self_con .and. flag_WFatomf_buildK) len = matrix_size
-!!! 2025.02.03 nakata end
     len_occ = len
     if(iprint_DM+min_layer>3.AND.myid==0) &
          write(io_lun,fmt='(10x,a,2i6)') 'buildK: Stage three len:',len, matA
@@ -3674,10 +3666,7 @@ contains
           end do
           if(iprint_DM + min_layer>=4.AND.myid==0) &
                write(io_lun,fmt='(10x,a)') 'filling buffer'
-!!! 2025.02.03 nakata
-!          if(.not.(wf_self_con .and. flag_write_projected_DOS)) then
           if(.not.(flag_pDOS_buildK .or. flag_WFatomf_buildK)) then
-!!! 2025.02.03 nakata end
              do j=1,len_occ ! This is a loop over eigenstates
                 RecvBuffer(j,1:recv_info(recv_proc+1)%orbs) = RecvBuffer(j,1:recv_info(recv_proc+1)%orbs)*occ_correction*occs(j)
              end do
@@ -3728,23 +3717,11 @@ contains
                                  polSloc(1:pol_S_size,1:pol_S_size,dir),pol_S_size)
                          end do
                       end if
-!!! 2025.02.03 nakata pDOS-MSSF
-!                      ! projected DOS
-!                      if(flag_pDOS_buildK .and. wf_self_con .and. flag_write_projected_DOS) then
-!                         whereMat = matrix_pos(matSij, prim, jatom, col_sup, row_sup)
-!                         Siajb = return_matrix_value_pos(matSij,whereMat)
-!                         ! 1:len_occ gives bands; we want c_jb^n * S_iajb
-!                         overlapEig(1:len_occ,prim_orbs(prim)+col_sup) = &
-!                              overlapEig(1:len_occ,prim_orbs(prim)+col_sup) + &
-!                              Siajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
-!                      end if
-!!! 2025.02.03 nakata end
                       ! Build K or M3
                       whereMat = matrix_pos(matA, prim, jatom, col_sup, row_sup)
                       zsum = dot(len_occ,localEig(1:len_occ,prim_orbs(prim)+col_sup),1,RecvBuffer(1:len_occ,orb_count+row_sup),1)
                       call store_matrix_value_pos(matA,whereMat,real(zsum*cmplx(rfac,ifac,double_cplx),double))
                    end do ! col_sup=nsf
-!!! 2025.02.03 nakata pDOS-MSSF
                    ! projected DOS in atomf basis
                    if(wf_self_con) then
                       do col_atomf = 1,natomf_species(bundle%species(prim))
@@ -3767,8 +3744,7 @@ contains
                                  Siajb*RecvBuffer(1:len_occ,orb_count+row_sup)*cmplx(rfac,ifac,double_cplx)
                          endif
                       end do ! col_atomf=natomf
-                   end if
-!!! 2025.02.03 nakata end
+                   end if ! wf_self_con (projected DOS)
                 end do ! row_sup=nsf
              end do ! inter=recv_info%ints
              ! Careful - we only want to increment after ALL interactions done
@@ -3801,7 +3777,7 @@ contains
             recv_info(i)%dx,recv_info(i)%dy,recv_info(i)%dz,STAT=stat)
        if(stat/=0) call cq_abort('buildK: Error deallocating recvinfo !',i,stat)
     end do
-    deallocate(prim_orbs_atomf,prim_orbs,send_off,send_orbs,send_info,STAT=stat)   !!! 2025.02.03 nakata
+    deallocate(prim_orbs_atomf,prim_orbs,send_off,send_orbs,send_info,STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating send_info !',stat)
     deallocate(recv_info,STAT=stat)
     if(stat/=0) call cq_abort('buildK: Error allocating recv_info !',stat)

@@ -209,12 +209,9 @@ contains
           call read_ion_ascii_tmp(pseudo(ispecies),pao(ispecies))
 
           npao_species(ispecies) = pao(ispecies)%count
-!!! 2025.02.03 nakata
-          ! Set NSF if not set by user
-          if(nsf_species(ispecies)==0) nsf_species(ispecies) = pao(ispecies)%count
           ! Set NSF to NPAO anyway (even if NSF is set by user for MSSFs)
+          ! because eigenvectors (ProcessWF and ProcessSijWF) output by CQ are always in PAO basis
           nsf_species(ispecies) = pao(ispecies)%count
-!!! 2025.02.03 nakata end
           maxnsf = max(maxnsf,nsf_species(ispecies))
           ! Find radius for atom functions
           do l=0,pao(ispecies)%greatest_angmom

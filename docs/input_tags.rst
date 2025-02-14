@@ -18,11 +18,6 @@ are specified as: *integer*;
 General
 -------
 
-General.Title (*string*)
-    Title for the calculation
-
-    *default*: none
-
 General.NumberOfSpecies (*integer*)
     Number of species in cell
 
@@ -57,11 +52,16 @@ General.FunctionalType (*integer*)
     GGA PBE + Zhang-Yang 98 (revPBE)           102     :cite:`e-Zhang:1998oq`
     GGA PBE + Hammer-Hansen-Norskov 99 (RPBE)  103     :cite:`e-Hammer1999`
     GGA WC                                     104     :cite:`e-Wu:2006cu`
+    hybrid PBE0   (25% of exact exchange)      201     :cite:`e-Perdew1996hyb`
     =========================================  ======= =======================
 
     At the moment, only LSDA Perdew-Wang 92 and the three GGA
     Perdew-Burke-Ernzerhof functional variants can be used in spin polarised calculations.
 
+    At the moment, only hybrid functionals with GGA PBE are allowed. Fraction of
+    exact exchange can be tuned. **Warning**: EXX contribution to forces are not
+    implemented yet. 
+    
     Note that, if the code is compiled with LibXC, the full LibXC
     set of functionals is available, selected with a negative six
     digit number (-XXXCCC or -CCCXXX).
@@ -124,8 +124,9 @@ General.NewRun (*boolean*)
 
     *default*: T
 
-General.LoadL (*boolean*)
-    Specifies whether to load a previous L matrix from files
+General.LoadDM (*boolean*)
+    Specifies whether to load a previous density matrix (K or L depending on
+    whether diagonalisation or linear scaling are selected) from files
 
     *default*: F
 
@@ -224,7 +225,7 @@ Input-Output General Tags
 -------------------------
 
 IO.Title (*string*)
-    Title for run
+    Title for calculation
 
     *default*: none
 
@@ -250,7 +251,8 @@ IO.DumpL (*boolean*)
 
     *default*: T
 
-IO.DumpChargeDensity (*boolean*) Whether to write out the charge
+IO.DumpChargeDensity (*boolean*)
+    Whether to write out the charge
     density.  If T, then the charge density will be written out at
     self-consistency; additionally, if ``IO.Iprint_SC`` is larger than
     2, the charge density will be written out at every step of the SCF
@@ -258,8 +260,17 @@ IO.DumpChargeDensity (*boolean*) Whether to write out the charge
     format files using the :ref:`post-processing utility
     <et_post_process>`.
 
-    *default*: T
+    *default*: F
 
+IO.Dump[Har|XC|PS|ES|Tot]Pot (*boolean*)
+    Flags to allow dumping of different local potentials (Hartree, XC, pseudopotential, electrostatic, total).
+    Only active when a static self-consistent run is chosen. (NB each flag must be set to true for output,
+    such as ``IO.DumpHarPot T`` etc.)  Files can be converted to cube format as for charge density by setting
+    ``Process.ChargeStub`` appropriately (e.g. ``locpsHar`` with other files replacing Har
+    with XC, PS, ES and Tot)
+
+    *default*: F
+    
 IO.TimingOn (*boolean*)
     Whether time information will be measured and written to output
 
@@ -316,24 +327,21 @@ Levels of Output
 
 The overall level of output is controlled by **IO.Iprint** and can be
 fine-tuned with the other IO.Iprint keywords. These are by default set
-to the value of iprint, but that will be over-ridden if setting them
-explicitly. For instance, IO.Iprint could be set to 0, but IO.Iprint\_MD
+to the value of **IO.Iprint**, but that will be over-ridden if setting them
+explicitly. For instance, **IO.Iprint** could be set to 0, but **IO.Iprint\_MD**
 could be set to 2 giving more extensive information about atomic
 movements but little other information.
-
-N.B. At beta release, these levels of output are still being tuned;
-level 0 is reliable, and generally fairly minimal.
 
 IO.Iprint (*integer*)
     The amount of information printed out to the output file
     The larger the value the more detailed the output is.
 
     | 0 Basic information about the system and the run
-    | 1 Breakdown of energies, and details of the SCF cycle
-    | 2 Matrix range info, matrix multiplication details (covering set), partition details and general parallelisation info.
-    | 3 Subroutines called, messages upon entering/quitting subroutines
-    | 4 Details including internal variables of subroutines
-    | 5 Don’t do this.
+    | 1 Overview of the SCF cycle and atom movement
+    | 2 More detail on SCF cycle, atom movement
+    | 3 Extensive detail on SCF cycle, atom movement
+    | 4 Details of energy breakdown
+    | 5 Excessive output, only for developers debugging
 
 
     *default*: 0
@@ -390,8 +398,14 @@ Grid.GridCutoff (*real*)
     the value chosen will automatically be forced to be a factor of 3, 4 and 5 only
     (to fit with default FFT routines)
 
-    Default: 20 Ha.
+    Default: 50 Ha.
 
+Grid.GridSpacing (*real*)
+    As an alternative, the grid spacing in Bohr radii can be set (the code will determine a number
+    of grid points that will be below this value)
+
+    Default: zero (value taken from Grid.GridCutoff above)
+    
 Go to :ref:`top <input_tags>`.
 
 .. _input_minE:
@@ -530,6 +544,11 @@ SC.MetricFactor (*real*)
 
     *default*: 0.1
 
+SC.MakeInitialChargeFromK (*boolean*)
+    Flag determining whether initial charge is made from the density matrix
+
+    *default*: T
+    
 Go to :ref:`top <input_tags>`.
 
 .. _input_dm:
@@ -545,7 +564,7 @@ DM.SolutionMethod (*string*)
     density matrix elements) or an O(N) method (ordern a combination of the
     techniques of Li et al. :cite:`e-Li1993` and Palser and Manolopoulos :cite:`e-Palser1998`.)
 
-    *default*: ordern
+    *default*: diagon
 
 DM.L\_range (*real*)
     Cutoff applied to L matrix (total energy will converge with increasing range;
@@ -654,30 +673,43 @@ Diag.GammaCentred (*boolean*)
     Selects Monkhorst-Pack mesh centred on the Gamma point
 
     *default*: F
-    
-Diag.ProcRows (*integer*)
 
-    *default*:
+Diag.dk (*real*)
+    Sets the number of k-points in the Monkhorst-Pack method so that the spacing
+    in reciprocal space is less than the specified value.
 
-Diag.ProcCols (*integer*)
+    *default*: 0.0
 
-    *default*:
+Diag.PaddingHmatrix (*boolean*)
+    Setting this flag allows the Hamiltonian and overlap matrices to be 
+    made larger than their physical size, so that ScaLAPACK block sizes can
+    be set to any value (which can significantly improve efficiency).  At present, the
+    automatic setting of block sizes does not use this functionality; if
+    desired, block sizes must be set manually (note that the optimum block
+    size is likely to be different on different machines).  (Available from v1.2)
+
+    *default*: T
 
 Diag.BlockSizeR (*integer*)
+    Block size for rows (See next).
+    From v1.4, the default value is 32 when Diag.PaddingHmatrix is true.
+    It is recommended to check the efficiency (CPU time) on your platform by changing this value.
+    Usually 20-40 is appropriate.
 
-    *default*:
+    *default*: 32 or Determined automatically (if Diag.PaddingHmatrix= true) 
 
 Diag.BlockSizeC (*integer*)
     R ... rows, C ... columns
-    These are ScaLAPACK parameters, and can be set heuristically by the code. Blocks
-    are sub-divisions of matrices, used to divide up the matrices between processors.
+    These are ScaLAPACK parameters, and can be set heuristically by the code. 
+    Blocks are sub-divisions of matrices, used to divide up the matrices between processors.
     The block sizes need to be factors of the square matrix size
     (i.e. :math:`\sum_{\mathrm{atoms}}\mathrm{NSF(atom)}`). A value of 64 is considered
-    optimal by the ScaLAPACK user’s guide. The rows and columns need to multiply
-    together to be less than or equal to the number of processors. If ProcRows
-    :math:`\times` ProcCols :math:`<` number of processors, some processors will be left idle.
+    optimal by the ScaLAPACK user’s guide. 
 
-    *default*:
+    If Diag.PaddingHmatrix is set to true then the block sizes can take any value,
+    but BlockSizeR and BlockSizeC must be the same.
+
+    *default*: Determined automatically
 
 Diag.MPShift[X/Y/Z] (*real*)
     Specifies the shift *s* of k-points along the x(y,z) axis, in fractional
@@ -740,7 +772,10 @@ Diag.ProcRows (*integer*)
 
 Diag.ProcCols (*integer*)
     Number of columns in the processor grid for SCALAPACK within each k-point
-    processor group 
+    processor group.  The rows and columns need to multiply
+    together to be less than or equal to the number of processors. If ProcRows
+    :math:`\times` ProcCols :math:`<` number of processors, some processors will be left idle.
+
 
     *default*: Determined automatically
 
@@ -751,13 +786,15 @@ Go to :ref:`top <input_tags>`.
 Moving Atoms
 ------------
 AtomMove.TypeOfRun (*string*)
-    values: static/cg/lbfgs/md
+    values: static/cg/sqnm/lbfgs/md
 
     Options:
 
     static — Single point calculation
 
     cg — Structure optimisation by conjugate gradients
+
+    sqnm - Stabilised Quasi-Newton Minimisation (recommended approach)
 
     lbfgs — Structure optimisation by LBFGS (Limited Memory Broyden–Fletcher–Goldfarb–Shanno algorithm)
 
@@ -786,6 +823,13 @@ AtomMove.MaxForceTol (*real*)
 
     *default*: 0.0005 Ha/bohr
 
+AtomMove.MaxSQNMStep (*real*)
+    The maximum distance any atom can move during SQNM (in Bohr).  Applies to the
+    part of the search direction not in the SQNM subspace (scaled directly by a step
+    size, which is limited to ensure this value is not exceeded).
+
+    *default*: 0.2 bohr
+    
 AtomMove.Timestep (*real*)
     Time step for molecular dynamics
 
@@ -816,11 +860,27 @@ AtomMove.OutputFreq (*integer*)
 
     *default*: 50
 
-AtomMove.WriteXSF *(boolean*)
+AtomMove.WriteXSF (*boolean*)
     Write atomic coordinates to ``trajectory.xsf`` for ``AtomMove.TypeOfRun = md`` or ``cg``,
-    every ``AtomMove.OutputFreq`` steps
+    every ``AtomMove.XsfFreq`` steps
 
     *default*: T
+
+AtomMove.XsfFreq (*integer*)
+    Frequency of output of atomic coordinates to ``trajectory.xsf``
+
+    *default*: same as ``AtomMove.OutputFreq``
+
+AtomMove.WriteXYZ (*boolean*)
+    Write atomic coordinates to ``trajectory.xyz`` for ``AtomMove.TypeOfRun = md``,
+    every ``AtomMove.XyzFreq`` steps
+
+    *default*: T
+
+AtomMove.XyzFreq (*integer*)
+    Frequency of output of atomic coordinates to ``trajectory.xyz``
+
+    *default*: same as ``AtomMove.OutputFreq``
 
 AtomMove.TestForces (*boolean*)
     Flag for testing forces with comparison of analytic and numerical calculations.
@@ -853,19 +913,21 @@ AtomMove.AtomicStress (*boolean*)
 
 AtomMove.OptCell (*boolean*)
     Turns on conjugate gradient relaxation of the simulation box dimensions a, b
-    and c. Note that AtomMove.TypeOfRun must also be set to cg.
+    and c. Note that AtomMove.TypeOfRun must also be set to cg (except for method 2 below
+    where sqnm will result in SQNM for atomic positions and CG for cell vectors).
 
     *default*: F
 
 AtomMove.OptCellMethod (*integer*)
     Cell optimisation method.
-    1. fixed fractional coordinates
-    2. double loop - inner: full atomic cg optimisation, outer: single cell
-    steepest descent step. Generally only useful for systems that are extremely
-    problematic to relax
-    3. simultaneous cell and atomic conjugate gradients relaxation
-
+    
     *default*: 1
+
+    Options:
+
+    1. Fixed fractional coordinates (only cell vectors)
+    2. Alternating atomic position and cell vector optimisation (recommended for simultaneous optimisation)
+    3. Simultaneous cell and atomic conjugate gradients relaxation; caution recommended (can be unstable)
 
 AtomMove.EnthalpyTolerance (*real*)
     Enthalpy tolerance for cell optimisation
@@ -889,25 +951,26 @@ AtomMove.OptCell.Constraint (*string*)
 
     *Fixing a single cell dimension:*
 
-    a: Fix the x-dimension of the simulation box
+    ``a``: Fix the x-dimension of the simulation cell
 
-    b: Fix the y-dimension of the simulation box
+    ``b``: Fix the y-dimension of the simulation cell
 
-    c: Fix the z-dimension of the simulation box
+    ``c``: Fix the z-dimension of the simulation cell
 
     *Fixing multiple cell dimensions:*
 
-    any combination of the above separated by a space character. e.g: "a b" fixes
-    both the x and y dimensions of the simulation box
+
+    Any combination of the above separated by a space character. e.g: ``a b`` fixes
+    both the x- and y-dimensions of the simulation cell.
 
     *Fixing Ratios:*
 
-    Any combination of a, b or c separated by a "/" character. e.g "c/a" fixes
-    the initial ratio of the z-dimension to the x-direction.
+    Any combination of a, b or c separated by a "/" character, e.g ``c/a`` fixes
+    the initial ratio of the z-dimension to the x-dimension.
 
     *Global scaling factor:*
 
-    volume: minimize the total energy by scaling each simulation box dimension by
+    ``volume``: minimize the total energy by scaling each simulation cell dimension by
     the same global scaling factor. Search directions are set by the mean stress.
 
 AtomMove.TestSpecificForce (*integer*)
@@ -1131,6 +1194,32 @@ MD.BaroDebug (*boolean*)
 
     *default*: F
 
+MD.VariableTemperature (*boolean*)
+    Simulation with a variable temperature if .True.
+
+    *default*: F
+
+MD.VariableTemperatureMethod (*string*)
+    Type of temperature profile. Only ``linear`` temperature profile is implemented.
+
+    *default*: linear
+
+MD.VariableTemperatureRate (*real*)
+    Change rate for the temperature. In units of K/fs.
+    If positive, heating. If negative, cooling.
+
+    *default*: 0.0
+
+MD.InitialTemperature(*real*)
+    Initial temperature.
+
+    *default*: same as AtomMove.IonTemperature
+
+MD.FinalTemperature(*real*)
+    Final temperature.
+
+    *default*: same as AtomMove.IonTemperature
+
 Go to :ref:`top <input_tags>`.
 
 .. _input_spin:
@@ -1266,6 +1355,42 @@ cDFT.AtomGroups (*block*)
 
 Go to :ref:`top <input_tags>`.
 
+.. _input_exx:
+
+Exact exchange (EXX)
+--------------------
+
+EXX.Alpha (*real*)
+    Fraction of exact exchange for the density functional XC
+    functional. For example, a value of 1 yields to full EXX with
+    no GGA exchange.
+    
+    *default*: 0.25
+
+EXX.Scheme (*integer*)
+    Select the algorithm to compute EXX matrix elements based on local
+    numerical Poisson solver. Either the contraction reduction
+    integral (CRI) method or full/screened computation
+    of the electron repulsion integrals (ERIs) at each SCF step. For
+    the latter, possibility of storing the integrals computed at the
+    first SCF step is available.
+    
+    -  1 Direct SCF using the CRI algorithm
+    -  2 Direct SCF using explicit calculation of ERIs
+    -  3 Indirect SCF using explicit calculation of ERIs and storage
+
+    We recommand either 1 or 3.
+       
+    *default*: 1
+
+EXX.Grid (*string*)
+    Grid accuracy for numerical solution of local the Poisson equation.
+    Choose either ``coarse``, ``standard`` or ``fine``.
+
+    *default*: ``standard``
+
+Go to :ref:`top <input_tags>`.
+    
 .. _input_vdw:
 
 vdW-DF
@@ -1390,6 +1515,16 @@ General.GapThreshold (*real*)
 General.only_Dispersion (*boolean*)
     Selects only DFT\_D2 calculation (no electronic structure etc)
 
+General.MixXCGGAInOut (*real*)
+    For non-SCF calculations only, chooses how to mix the proportions of
+    GGA XC stress contribution (from the change of the electron density
+    gradient) found using input (0.0 gives pure input) and output (1.0
+    gives pure output) densities.  Note that this is an approximation but
+    varying the value significantly away from 0.5 will give inconsistency
+    between stress and energy.
+
+    *default*: 0.5
+    
 Go to :ref:`top <input_tags>`.
 
 .. _advanced_atomic_spec_tags:
@@ -1519,6 +1654,13 @@ IO.PdbTemplate (*string*)
     overwritten with this keyword
 
     *default*: coordinate file
+
+IO.AtomOutputThreshold (*integer*)
+    Threshold below which atomic positions are output on
+    initialisation, and atomic forces are output at the end of a
+    static run.
+
+    *default*: 200
 
 Go to :ref:`top <input_tags>`.
 

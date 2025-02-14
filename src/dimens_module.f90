@@ -55,7 +55,7 @@ module dimens
 
   real(double) :: r_super_x, r_super_y, r_super_z, volume
   real(double) :: r_super_x_squared, r_super_y_squared, r_super_z_squared
-  real(double) :: r_s, r_h, r_c, r_nl, r_core_squared, r_dft_d2, r_exx
+  real(double) :: r_s, r_h, r_c, r_nl, r_core_squared, r_dft_d2, r_exx, r_exxs
   real(double) :: r_s_atomf, r_h_atomf, r_MS, r_LD
   real(double) :: grid_point_volume, one_over_grid_point_volume
   real(double) :: support_grid_volume
@@ -161,6 +161,8 @@ contains
 !!    flag_MDold was removed.
 !!   2019/12/02 15:17 dave 
 !!    Added checks to round RadiusAtomf and RadiusSupport to safe value (including grid points)
+!!   2024/07/18 14:18 lionel 
+!!    Check consistency of Xrange wrt r_exx read from input 
 !!  SOURCE
 !!
   subroutine set_dimensions(inode, ionode,HNL_fac,non_local, n_species, non_local_species, core_radius)
@@ -275,8 +277,8 @@ contains
     end do
     if(non_local.and.(inode==ionode).and.iprint_init>0) then
        write(io_lun,2) r_core
-2      format(8x,'This calculation includes non-local pseudopotentials,'/&
-            9x,'with a maximum core radius of ',f15.8)
+2      format(/4x,'This calculation includes non-local pseudopotentials,'/&
+            4x,'with a maximum core radius of ',f15.8)
     end if
     if (r_core-r_h>1e-4_double) then
        call cq_abort('set_dimens: r_core > r_support',r_core,r_h)
@@ -311,24 +313,25 @@ contains
 
     ! **< lat >** don't touch
     if(flag_exx) then
-       if( rcut(Xrange) > rcut(Hrange) ) then
-          rcut(Hrange)  = rcut(Xrange)
-          rcut(SXrange) = rcut(Hrange)
-          !
-       else if ( rcut(Xrange) <= zero ) then
+       if ( r_exx <= zero ) then
           rcut(Xrange)  = rcut(Hrange)
-          rcut(SXrange) = rcut(Hrange)
-          !
+          !rcut(SXrange) = rcut(Hrange)
+          r_exx         = rcut(Xrange)/2_double
        else
           rcut(Xrange)   = two*r_exx
-          rcut(SXrange)  = two*r_exx
-          !
-       endif
+       end if
+       if ( r_exxs <= zero ) then
+          !rcut(Xrange)  = rcut(Hrange)
+          rcut(SXrange) = rcut(Hrange)
+          r_exxs        = rcut(SXrange)/2_double
+       else
+          rcut(SXrange)  = two*r_exxs
+       end if
     else
        rcut(Xrange)   = two
        rcut(SXrange)  = two
     end if
-
+    
     ! New 16:25, 2014/08/29  **< lat >**
     !rcut(Hrange)   = (two*(r_h + r_nl))
     !rcut(Hrange)   = (two*(r_h+HNL_fac*r_core))
@@ -451,7 +454,7 @@ contains
 
     if(n_grid_x>0.AND.n_grid_y>0.AND.n_grid_z>0) then ! We dont need to find grids
        if(iprint_init>1.AND.inode==ionode) &
-            write(io_lun,fmt='(2x,"User specified grid dimensions: ",3i5)') n_grid_x,n_grid_y,n_grid_z
+            write(io_lun,fmt='(8x,"User specified grid dimensions: ",3i5)') n_grid_x,n_grid_y,n_grid_z
        call stop_backtrace(t=backtrace_timer,who='find_grid')
        return
     else

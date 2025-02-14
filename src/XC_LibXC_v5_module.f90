@@ -33,7 +33,7 @@ module XC
 
   use datatypes
   use global_module, only: area_ops, io_lun, iprint_ops, spin_factor
-  use xc_f90_lib_m
+  use xc_f03_lib_m
 
   implicit none
 
@@ -55,8 +55,8 @@ module XC
   ! LibXC variables
   integer :: n_xc_terms
   integer, dimension(2) :: i_xc_family
-  type(xc_f90_func_t), dimension(:), allocatable :: xc_func
-  type(xc_f90_func_info_t), dimension(:), allocatable :: xc_info
+  type(xc_f03_func_t), dimension(:), allocatable :: xc_func
+  type(xc_f03_func_info_t), dimension(:), allocatable :: xc_info
   logical :: flag_use_libxc
 
   ! Conquest functional identifiers
@@ -113,8 +113,8 @@ contains
     integer :: vmajor, vminor, vmicro, i, j
     integer, dimension(2) :: xcpart
     character(len=120) :: name, kind, family, ref
-    type(xc_f90_func_t) :: temp_xc_func
-    type(xc_f90_func_info_t) :: temp_xc_info
+    type(xc_f03_func_t) :: temp_xc_func
+    type(xc_f03_func_info_t) :: temp_xc_info
 
     ! Test for LibXC or CQ
     if(flag_functional_type<0) then
@@ -123,12 +123,12 @@ contains
        ! LibXC functional specified
        ! --------------------------
        flag_use_libxc = .true.
-       call xc_f90_version(vmajor, vminor, vmicro)
+       call xc_f03_version(vmajor, vminor, vmicro)
        if(inode==ionode.AND.iprint_ops>0) then
           if(vmajor>2) then
-             write(io_lun,'("LibXC version: ",I1,".",I1,".",I2)') vmajor, vminor, vmicro
+             write(io_lun,'(4x,"LibXC version: ",I2,".",I2,".",I2)') vmajor, vminor, vmicro
           else
-             write(io_lun,'("LibXC version: ",I1,".",I1)') vmajor, vminor
+             write(io_lun,'(4x,"LibXC version: ",I2,".",I2)') vmajor, vminor
           end if
        end if
        ! Identify the functional
@@ -141,13 +141,13 @@ contains
           i = floor(-flag_functional_type/1000.0_double)
           ! Temporary init to find exchange or correlation
           if(nspin==1) then
-             call xc_f90_func_init(temp_xc_func, i, XC_UNPOLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_UNPOLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           else if(nspin==2) then
-             call xc_f90_func_init(temp_xc_func, i, XC_POLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_POLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           end if
-          select case(xc_f90_func_info_get_kind(temp_xc_info))
+          select case(xc_f03_func_info_get_kind(temp_xc_info))
           case(XC_EXCHANGE)
              xcpart(1) = i
              xcpart(2) = -flag_functional_type - xcpart(1)*1000
@@ -155,25 +155,25 @@ contains
              xcpart(2) = i
              xcpart(1) = -flag_functional_type - xcpart(2)*1000
           end select
-          call xc_f90_func_end(temp_xc_func)
+          call xc_f03_func_end(temp_xc_func)
        end if
        ! Now initialise and output
        allocate(xc_func(n_xc_terms),xc_info(n_xc_terms))
        do i=1,n_xc_terms
           if(nspin==1) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           else if(nspin==2) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           end if
           ! Consistent threshold with Conquest
-          if(vmajor>2) call xc_f90_func_set_dens_threshold(xc_func(i),RD_ERR)
-          name = xc_f90_func_info_get_name(xc_info(i))
-          i_xc_family(i) = xc_f90_func_info_get_family(xc_info(i))
+          if(vmajor>2) call xc_f03_func_set_dens_threshold(xc_func(i),RD_ERR)
+          name = xc_f03_func_info_get_name(xc_info(i))
+          i_xc_family(i) = xc_f03_func_info_get_family(xc_info(i))
           if(i_xc_family(i)==XC_FAMILY_GGA) flag_is_GGA = .true.
           if(inode==ionode) then
-             select case(xc_f90_func_info_get_kind(xc_info(i)))
+             select case(xc_f03_func_info_get_kind(xc_info(i)))
              case (XC_EXCHANGE)
                 write(kind, '(a)') 'an exchange functional'
              case (XC_CORRELATION)
@@ -203,24 +203,33 @@ contains
 
              if(iprint_ops>2) then
                 if(vmajor>2) then
-                   write(io_lun,'("The functional ", a, " is ", a, ", it belongs to the ", a, &
+                   write(io_lun,'(4x,"The functional ", a, " is ", a, ", it belongs to the ", a, &
                    &     " family and is defined in the reference(s):")') &
                         trim(name), trim(kind), trim(family)
                    j = 0
-                   ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                   ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    do while(j >= 0)
-                      write(io_lun, '(a,i1,2a)') '[', j, '] ', trim(ref)
-                      ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                      write(io_lun, '(4x,a,i1,2a)') '[', j, '] ', trim(ref)
+                      ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    end do
                 else
-                   write(io_lun,'("The functional ", a, " is ", a, ", and it belongs to the ", a, &
+                   write(io_lun,'(4x,"The functional ", a, " is ", a, ", and it belongs to the ", a, &
                    &     " family")') &
                         trim(name), trim(kind), trim(family)
                 end if
              else if(iprint_ops>0) then
-                write(io_lun,'(2x,"Using the ",a," functional ",a)') trim(family),trim(name)
+                write(io_lun,'(4x,"Using the ",a," functional ",a)') trim(family),trim(name)
              else
-                write(io_lun,fmt='(2x,"Using functional ",a)') trim(name)
+                select case(xc_f03_func_info_get_kind(xc_info(i)))
+                case (XC_EXCHANGE)
+                   write(io_lun,fmt='(/4x,"Using X functional ",a)') trim(name)
+                case (XC_CORRELATION)
+                   write(io_lun,fmt='(4x,"Using C functional ",a/)') trim(name)
+                case (XC_EXCHANGE_CORRELATION)
+                   write(io_lun,fmt='(/4x,"Using XC functional ",a/)') trim(name)
+                case default
+                   write(io_lun,fmt='(/4x,"Using functional ",a/)') trim(name)
+                end select
              end if
           end if
        end do
@@ -265,7 +274,7 @@ contains
           functional_description = 'LSDA PW92'
           if(flag_dft_d2) call cq_abort("DFT-D2 only compatible with PBE and rPBE")
        end select
-       if(inode==ionode) write(io_lun,'(/10x, "The functional used will be ", a15)') functional_description
+       if(inode==ionode) write(io_lun,'(/4x, "The functional used will be ", a15/)') functional_description
        ! This is a temporary, Conquest-specific test - we will
        ! need to keep an eye on this and potentially introduce
        ! tests against functional name
@@ -279,6 +288,46 @@ contains
   end subroutine init_xc
   !!***
   
+  !!****f* XC_module/write_xc_refs *
+  !!
+  !!  NAME
+  !!   write_xc_refs
+  !!  USAGE
+  !!
+  !!  PURPOSE
+  !!   Write XC references
+  !!  INPUTS
+  !!
+  !!  USES
+  !!
+  !!  AUTHOR
+  !!   D. R. Bowler
+  !!  CREATION DATE
+  !!   2020/05/26
+  !!  MODIFICATION HISTORY
+  !!
+  !!  SOURCE
+  !!
+  subroutine write_xc_refs
+
+    implicit none
+
+    integer :: i, j
+    character(len=120) :: ref
+
+    write(io_lun,fmt='(4x,"XC references from LibXC:")')
+    do j=1,n_xc_terms
+       i = 0
+       ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(j),i))
+       do while(i >= 0)
+          write(io_lun, '(6x,a)') trim(ref)
+          ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(j),i))
+       end do
+    end do
+    return
+  end subroutine write_xc_refs
+  !!***
+
   !!****f* XC/get_xc_potential *
   !!
   !!  NAME
@@ -321,6 +370,7 @@ contains
     ! Local variables
     real(double) :: loc_x_energy, exx_tmp
 
+    XC_GGA_stress = zero
     if(flag_use_libxc) then
        call get_libxc_potential(density=density, size=size,&
             xc_potential    =xc_potential,    &
@@ -391,7 +441,7 @@ contains
           !
        case (functional_hyb_pbe0)
           !
-          if ( exx_niter < exx_siter ) then
+          if ( exx_niter <= exx_siter ) then
              exx_tmp = one
           else
              exx_tmp = one - exx_alpha
@@ -409,7 +459,7 @@ contains
        case (functional_hartree_fock)
           ! **<lat>**
           ! not optimal but experimental
-          if (exx_niter < exx_siter) then
+          if (exx_niter <= exx_siter) then
              ! for the first call of get_H_matrix using Hartree-Fock method
              ! to get something not to much stupid ; use pure exchange functional
              ! in near futur such as Xalpha
@@ -650,16 +700,18 @@ contains
        if(nspin>1) then
           select case( i_xc_family(nxc) )
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, eps, vrho )
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, sigma, eps, vrho, vsigma )
           end select
 
           ! d e_xc/d n
+          ! Awkward indexing because LibXC does spin first then grid point
           do spin=1,nspin
-             xc_potential(:,spin) = xc_potential(:,spin) + vrho(spin::nspin)
+             xc_potential(1:n_my_grid_points,spin) = xc_potential(1:n_my_grid_points,spin) + &
+                  vrho(spin:nspin*n_my_grid_points+spin-2:nspin)
           end do
 
           if(flag_is_GGA) then
@@ -671,7 +723,8 @@ contains
              do i=1,3
                 ! d eps / d sigma(up.up) grad rho(up) + d eps / d sigma(up.down) grad rho(down)
                 ! Note the stride here which comes from LibXC putting the spin index first
-                temp(:) = two*vsigma(1::3)*grad_density(:,i,1) + vsigma(2::3)*grad_density(:,i,2)
+                temp(1:n_my_grid_points) = two*vsigma(1:3*n_my_grid_points-2:3)*grad_density(1:n_my_grid_points,i,1) + &
+                     vsigma(2:3*n_my_grid_points-1:3)*grad_density(1:n_my_grid_points,i,2)
                 ! For non-orthogonal stresses, introduce another loop and dot with grad_density(:,j)
                 if (flag_stress) then
                   if (flag_full_stress) then
@@ -701,7 +754,8 @@ contains
              do i=1,3
                 ! d eps / d sigma(down.down) grad rho(down) + d eps / d sigma(up.down) grad rho(up)
                 ! Again, note stride
-                temp(:) = vsigma(2::3)*grad_density(:,i,1) + two*vsigma(3::3)*grad_density(:,i,2)
+                temp(1:n_my_grid_points) = vsigma(2:3*n_my_grid_points-1:3)*grad_density(1:n_my_grid_points,i,1) + &
+                     two*vsigma(3:3*n_my_grid_points:3)*grad_density(1:n_my_grid_points,i,2)
                 ! For non-orthogonal stresses, introduce another loop and dot with grad_density(:,j)
                 if (flag_stress) then
                   if (flag_full_stress) then
@@ -730,10 +784,10 @@ contains
        else ! No spin
           select case (i_xc_family(nxc))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens,  eps, vrho )
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, sigma,  eps, vrho, vsigma )
           end select
 
@@ -767,10 +821,15 @@ contains
              ng(:,1) = two * minus_i * ( ng(:,1)*recip_vector(:,1) + &
                   ng(:,2)*recip_vector(:,2) + ng(:,3)*recip_vector(:,3))
              ! Use vsigma for the second term in real space
-             vsigma = zero
-             call fft3(vsigma(:), ng(:,1), size, +1)
+             !vsigma = zero
+             !call fft3(vsigma(:), ng(:,1), size, +1)
+             !xc_potential(1:n_my_grid_points,1) = xc_potential(1:n_my_grid_points,1) + &
+             !     vsigma(1:n_my_grid_points)
+             ! Actually I think temp is fine
+             temp = zero
+             call fft3(temp(:), ng(:,1), size, +1)
              xc_potential(1:n_my_grid_points,1) = xc_potential(1:n_my_grid_points,1) + &
-                  vsigma(1:n_my_grid_points)
+                  temp(1:n_my_grid_points)
           end if ! flag_is_GGA
       
        end if ! nspin
@@ -869,7 +928,11 @@ contains
     integer :: stat, i, spin, n, j
 
     ! Initialise - allocate and zero
-    allocate(alt_dens(n_my_grid_points*nspin),vrho(n_my_grid_points*nspin))
+    if(nspin>1) then
+       allocate(alt_dens(n_my_grid_points*3),vrho(n_my_grid_points*3))
+    else
+       allocate(alt_dens(n_my_grid_points),vrho(n_my_grid_points))
+    end if
     alt_dens = zero
     if(flag_is_GGA) then
        allocate(diff_rho(size))
@@ -944,22 +1007,22 @@ contains
        if(nspin>1) then ! NB no spin-polarised GGA NSC forces
           select case (i_xc_family(j))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
-             dxc_potential(:,1,1) = dxc_potential(:,1,1) +vrho(1::3)
-             dxc_potential(:,1,2) = dxc_potential(:,1,2) +vrho(2::3)
-             dxc_potential(:,2,1) = dxc_potential(:,2,1) +vrho(2::3)
-             dxc_potential(:,2,2) = dxc_potential(:,2,2) +vrho(3::3)
+             call xc_f03_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
+             dxc_potential(1:n_my_grid_points,1,1) = dxc_potential(:n_my_grid_points,1,1) +vrho(1:3*n_my_grid_points-2:3)
+             dxc_potential(1:n_my_grid_points,1,2) = dxc_potential(:n_my_grid_points,1,2) +vrho(2:3*n_my_grid_points-1:3)
+             dxc_potential(1:n_my_grid_points,2,1) = dxc_potential(:n_my_grid_points,2,1) +vrho(2:3*n_my_grid_points-1:3)
+             dxc_potential(1:n_my_grid_points,2,2) = dxc_potential(:n_my_grid_points,2,2) +vrho(3:3*n_my_grid_points:3)
           end select
        else
           select case (i_xc_family(j))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
+             call xc_f03_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
              dxc_potential(1:n_my_grid_points,1,1) = dxc_potential(1:n_my_grid_points,1,1) + &
                   vrho(1:n_my_grid_points)
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_vxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,vrho,&
+             call xc_f03_gga_vxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,vrho,&
                   vsigma)
-             call xc_f90_gga_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,&
+             call xc_f03_gga_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,&
                   v2rho2,v2rhosigma,v2sigma2)
           end select
 
@@ -1156,9 +1219,9 @@ contains
        eps = zero
        select case( i_xc_family(nxc) )
        case(XC_FAMILY_LDA)
-          call xc_f90_lda_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, eps )
+          call xc_f03_lda_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, eps )
        case(XC_FAMILY_GGA)
-          call xc_f90_gga_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, sigma, eps )
+          call xc_f03_gga_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, sigma, eps )
        end select
        xc_epsilon(1:n_my_grid_points) = xc_epsilon(1:n_my_grid_points) + eps(1:n_my_grid_points)
     end do ! nxc = n_xc_terms
@@ -2617,7 +2680,7 @@ contains
           !
        case (functional_hyb_pbe0)
           !
-          if ( exx_niter < exx_siter ) then
+          if ( exx_niter <= exx_siter ) then
              exx_tmp = one
           else
              exx_tmp = one - exx_alpha
@@ -2629,7 +2692,7 @@ contains
        case (functional_hartree_fock)
           ! **<lat>**
           ! not optimal but experimental
-          if (exx_niter < exx_siter) then
+          if (exx_niter <= exx_siter) then
              ! for the first call of get_H_matrix using Hartree-Fock method
              ! to get something not to much stupid ; use pure exchange functional
              ! in near futur such as Xalpha

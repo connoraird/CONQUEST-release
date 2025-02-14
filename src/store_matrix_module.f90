@@ -134,10 +134,11 @@ contains
     ! Module usage
     use global_module, ONLY: ni_in_cell, nspin, nspin_SF, flag_diagonalisation, flag_Multisite, &
          flag_XLBOMD, flag_propagateX, flag_dissipation, integratorXL, flag_SFcoeffReuse, &
-         flag_DumpMatrices
+         flag_DumpMatrices, flag_basis_set, PAOs
     use matrix_data, ONLY: Lrange, Hrange, SFcoeff_range, SFcoeffTr_range, HTr_range, Srange, LSrange
     use mult_module, ONLY: matL,L_trans, matK, matSFcoeff, matS
-    use io_module, ONLY: append_coords, write_atomic_positions, pdb_template
+    use io_module, ONLY: append_coords, pdb_template, write_atomic_positions
+    !use io_module, ONLY: write_atomic_positions_ase
     use mult_module, only: matXL, matXLvel
     use GenComms, only: cq_warn
 
@@ -163,7 +164,8 @@ contains
     index_local = 0; if(present(index)) index_local=index
     MDstep_local = 0; if(present(MDstep)) MDstep_local=MDstep
 
-    if(flag_SFcoeffReuse .or. flag_Multisite) then
+    ! Blip coefficients are saved separately
+    if(flag_basis_set==PAOs .and. (flag_SFcoeffReuse .or. flag_Multisite)) then
        call dump_matrix_update('SFcoeff',matSFcoeff,SFcoeff_range,&
             index=index_local,nspin=nspin_SF,iprint_mode=mat,MDstep=MDstep_local)
     endif
@@ -210,6 +212,7 @@ contains
     end if
 
     append_coords_bkup = append_coords; append_coords = .false.
+    !call write_atomic_positions_ase()
     call write_atomic_positions('coord_next.dat',trim(pdb_template))
     append_coords = append_coords_bkup
 
@@ -592,7 +595,8 @@ contains
           do ni = 1, bundle%nm_nodgroup(np)
              atom_num=bundle%nm_nodbeg(np)+ni-1
              iprim = iprim + 1
-             if(atom_num /= iprim) write(io_lun,*) 'Warning!! in set_matrix_store : iprim & atom_num = ', &
+             if(atom_num /= iprim) &
+                  write(io_lun,fmt='(8x,a,2i6)') 'Warning!! in set_matrix_store : iprim & atom_num = ', &
                   iprim,atom_num
 
              do neigh = 1, mat(np,range)%n_nab(ni)
@@ -696,7 +700,8 @@ contains
   subroutine dump_InfoMatGlobal(index,velocity,MDstep)
 
     ! Module usage
-    use global_module, ONLY: ni_in_cell,numprocs,rcellx,rcelly,rcellz,id_glob, io_lun, iprint_MD
+    use global_module, ONLY: ni_in_cell,numprocs,rcellx,rcelly,rcellz,id_glob, &
+         min_layer, io_lun, iprint_MD
     use GenComms, ONLY: cq_abort, inode, ionode, my_barrier, myid
     use group_module, ONLY: parts
     use io_module, ONLY: get_file_name, get_file_name_2rank
@@ -743,7 +748,7 @@ contains
     if(inode == ionode) then
        call io_assign(lun)
        call get_file_name_2rank('InfoGlobal',filename,index_local)
-       if(iprint_MD>2) write(io_lun,*) ' filename = ',filename
+       if(iprint_MD + min_layer > 4) write(io_lun,fmt='(8x,a)') ' filename = '//filename
        open (lun,file=filename,iostat=istat)
        rewind lun
        if (istat.GT.0) call cq_abort('Fail in opening InfoGlobal.dat .')
@@ -993,7 +998,7 @@ contains
        enddo !ig=1, InfoGlob%ni_in_cell
 
        if(flag_velocity_local) then
-          if(iprint_MD>2) write(io_lun,*) 'Reading velocity from ',filename
+          if(iprint_MD>2) write(io_lun,fmt='(8x,a)') 'Reading velocity from '//filename
           read(lun,*)
           do ig=1, InfoGlob%ni_in_cell
              read(lun,101) iglob, InfoGlob%atom_veloc(1:3, ig)
@@ -1328,7 +1333,7 @@ contains
           else
              ! Case 2 : Text Format   old version  -----------------------
              open (lun,file=file_name,status='old',iostat=stat)
-             if (myid==0.AND.iprint_MD > 2) write(*,*) " Trying to open the ASCII file : ",file_name
+             if (myid==0.AND.iprint_MD > 4) write(*,*) " Trying to open the ASCII file : ",file_name
              if (stat/=0) call cq_abort('Fail in opening ASCII Lmatrix file.')
              ! Get dimension, allocate arrays and store necessary data.
              read (lun,*,iostat=stat) proc_id, InfoMat(ifile)%natom_i
@@ -1531,7 +1536,7 @@ contains
     maxiters = maxiter_Dissipation
     if(maxiters < 4) maxiters = 3
     if(maxiters > 9) then
-       if(inode == ionode) write(io_lun,*)  &
+       if(inode == ionode) write(io_lun,fmt='(8x,a,i6)')  &
             &'WARNING: maxiters_Dissipation should be smaller than 10 : ', maxiter_Dissipation
        maxiters = 9
     endif
@@ -1544,4 +1549,136 @@ contains
     return
   end subroutine dump_XL
   !!***
+
+  ! -----------------------------------------------------------------------
+  ! Subroutine write_Rij_MatrixElements
+  ! -----------------------------------------------------------------------
+
+  !!****f* store_matrix/write_Rij_MatrixElements *
+  !!
+  !!  NAME
+  !!    write_Rij_MatrixElements    : made from dump_matrix2
+  !!  USAGE
+  !!     call write_Rij_MatrixElements('K',matK,Hrange,n_matrix=nspin,index=10)
+  !!    will generate the file "Kmatrix_plot.i10.p000000".
+  !!    You can omit "index=10", then the default value of index = 00.
+  !!
+  !!    At present, it prints out the matrix elements only for inode = 1
+  !!    (you can print out the matrix elements for all nodes, simply by
+  !!    commenting out the IF statements
+  !!
+  !!  PURPOSE
+  !!    writes Rij and abs(MatElements(ij))
+  !!  INPUTS
+  !!
+  !!  USES
+  !!
+  !!  AUTHOR
+  !!   Tsuyoshi Miyazaki
+  !!  CREATION DATE
+  !!   2024/08/30
+  !!  MODIFICATION
+  !!
+  !!  SOURCE
+  !!
+  subroutine write_Rij_MatrixElements(stub,matA,range,n_matrix,index)
+
+    use GenComms, ONLY: inode, ionode, cq_abort
+    use global_module, ONLY: numprocs, id_glob
+    use io_module, ONLY: get_file_name, get_file_name_2rank
+    use global_module, ONLY: rcellx, rcelly, rcellz
+
+    implicit none
+
+    ! Passed variables
+    character(len=*),intent(in) :: stub
+    integer,intent(in) :: n_matrix
+    integer,intent(in) :: matA(n_matrix)
+    integer,intent(in) :: range
+    integer,optional,intent(in) :: index
+
+    ! Local variables
+    type(matrix_store):: tmp_matrix_store
+    integer :: lun, iprim, nprim, jmax, jj, ibeg, jbeta_alpha, len, istat
+    character(80) :: file_name
+    integer :: index_local, nn
+    integer :: ibeg2, n1, n2, nspin_local
+    real(double) :: Rij(1:3), Rij_2
+
+    index_local=0; if(present(index)) index_local=index
+
+    IF(INODE == IONODE) THEN
+
+    ! set_matrix_store : build tmp_matrix_store
+    call set_matrix_store(stub,matA,range,n_matrix,tmp_matrix_store)
+
+    ! Actual Dump (from dump_matrix2)
+    ! First, get the name of a file based upon the node ID or rank.
+    if(flag_MatrixFile_RankFromZero) then
+       call get_file_name_2rank(stub//'matrix_plot',file_name,index_local,myid)
+    else
+       call get_file_name_2rank(stub//'matrix_plot',file_name,index_local,inode)
+    endif
+    call io_assign(lun)
+
+     open (lun,file=file_name,form='formatted')
+
+     ! 1. node ID, no. of PS of atoms "i".
+      nprim=tmp_matrix_store%n_prim
+      write (lun,*) "# inode,nprim = ",inode, nprim
+     ! 2. no. of alpha for each "i".
+      write (lun,*) "# n_alpha = ",tmp_matrix_store%nsf_spec_i(1:nprim)
+     ! NOTE: The followings are written out with neighbour-labelling
+     ! 3. no. of the neighbours "j" for each "i".
+     ! 4. no. of "neighbour-j x beta" for each "i".
+     ! 5. no. of matrices whose elements will be printed out
+     !write (lun,*) tmp_matrix_store%nspin
+
+     !I will change the order of dumping in the following, later.   2016/09/30: TM@UCL
+     if(nprim .GT. 0) then
+        do iprim=1,nprim
+           jmax = tmp_matrix_store%jmax_i(iprim)
+           ibeg = tmp_matrix_store%ibeg_Rij(iprim)
+           !write (lun,*) tmp_matrix_store%idglob_i(iprim)
+           !write (lun,*) tmp_matrix_store%beta_j(ibeg:ibeg+jmax-1)
+           !write (lun,*) tmp_matrix_store%idglob_j(ibeg:ibeg+jmax-1)
+
+           ibeg2 = tmp_matrix_store%ibeg_data_matrix(iprim)
+           jbeta_alpha=0
+
+           do jj=1,jmax
+              Rij(1:3) = tmp_matrix_store%vec_Rij(1:3,ibeg+jj-1)
+               Rij(1) = Rij(1)*rcellx
+               Rij(2) = Rij(2)*rcelly
+               Rij(3) = Rij(3)*rcellz
+              Rij_2 = Rij(1)**2 + Rij(2)**2 + Rij(3)**2
+              nspin_local=tmp_matrix_store%nspin
+             do n2=1,tmp_matrix_store%beta_j(ibeg+jj-1)
+              do n1=1,tmp_matrix_store%nsf_spec_i(iprim)
+               jbeta_alpha=jbeta_alpha+1
+               write (lun,fmt='(2x,2e20.10)') sqrt(Rij_2), abs(tmp_matrix_store%data_matrix(ibeg2+jbeta_alpha-1,1:nspin_local))
+              enddo
+             enddo
+           enddo !jj=1,jmax
+
+           if(iprim < nprim) then
+              len = tmp_matrix_store%ibeg_data_matrix(iprim+1)-tmp_matrix_store%ibeg_data_matrix(iprim)
+           else
+              len = tmp_matrix_store%matrix_size-tmp_matrix_store%ibeg_data_matrix(iprim)+1
+           endif
+             write(*,*) ' Subroutine: write_Rij_MatrixElements :: iprim, jbeta_alpha, len = ',iprim,jbeta_alpha,len
+        enddo !iprim=1,nprim
+     endif  ! (nprim .GT. 0)
+
+    ! Close the file in the end.
+    call io_close(lun)
+
+    ! free_matrix_store : free tmp_matrix_store
+    call free_matrix_store(tmp_matrix_store)
+
+    ENDIF ! (INODE == IONODE)
+
+    return
+  end subroutine write_Rij_MatrixElements
+
 end module store_matrix

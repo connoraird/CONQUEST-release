@@ -1,0 +1,7 @@
+bin/*
+deps.obj.inc
+*~
+src/system/system.make
+
+# Ignore folders within each benchmark but not files
+benchmarks/*/**/

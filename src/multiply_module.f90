@@ -146,27 +146,27 @@ contains
     integer :: lab_const
     integer :: invdir,ierr,kpart,ind_part,ncover_yz,n_which,ipart,nnode
     integer :: icall,n_cont,kpart_next,ind_partN,k_off
-    integer :: icall2,stat,ilen2,lenb_rem
+    integer :: stat,ilen2,lenb_rem
     ! Remote variables to be allocated
     integer(integ),allocatable :: ibpart_rem(:)
     real(double),allocatable :: b_rem(:)
     ! Remote variables which will point to part_array
-    integer(integ),pointer :: nbnab_rem(:)
-    integer(integ),pointer :: ibseq_rem(:)
-    integer(integ),pointer :: ibind_rem(:)
-    integer(integ),pointer :: ib_nd_acc_rem(:)
-    integer(integ),pointer :: npxyz_rem(:)
-    integer(integ),pointer :: ibndimj_rem(:)
+    integer(integ) :: nbnab_rem_beg, nbnab_rem_end
+    integer(integ) :: ibseq_rem_beg, ibseq_rem_end
+    integer(integ) :: ibind_rem_beg, ibind_rem_end
+    integer(integ) :: ib_nd_acc_rem_beg, ib_nd_acc_rem_end
+    integer(integ) :: npxyz_rem_beg, npxyz_rem_end
+    integer(integ) :: ibndimj_rem_beg, ibndimj_rem_end
     ! Arrays for remote variables to point to
-    integer, target :: part_array(3*a_b_c%parts%mx_mem_grp+ &
+    integer :: part_array(3*a_b_c%parts%mx_mem_grp+ &
          5*a_b_c%parts%mx_mem_grp*a_b_c%bmat(1)%mx_abs)
     integer, dimension(:), allocatable :: nreqs
     integer :: offset,sends,i,j
     integer, dimension(MPI_STATUS_SIZE) :: mpi_stat
     integer, allocatable, dimension(:) :: recv_part
-
-    logical flag,call_flag
     real(double) :: t0,t1
+
+    logical :: new_partition
 
     call start_timer(tmr_std_matmult)
 
@@ -213,143 +213,99 @@ contains
     !write(io_lun,*) 'Returned ',a_b_c%ahalo%np_in_halo,myid
     ncover_yz=a_b_c%gcs%ncovery*a_b_c%gcs%ncoverz
 
-! #ifdef OMP_M
-! !$omp parallel default(none) &
-! !$omp          shared(a, b, c, a_b_c, myid, lena, lenc, tmr_std_allocation, &
-! !$omp                 ncover_yz, ibpart_rem, atrans, usegemm) &
-! !$omp          private(kpart, icall, ind_part, ipart, nnode, b_rem, &
-! !$omp                  lenb_rem, n_cont, part_array, ilen2, offset, &
-! !$omp                  nbnab_rem, ibind_rem, ib_nd_acc_rem, ibseq_rem, &
-! !$omp                  npxyz_rem, ibndimj_rem, k_off, icall2)
-! !$omp do
-! #end if
+    !$omp parallel default(shared)
+    main_loop: do kpart = 1,a_b_c%ahalo%np_in_halo
 
-    do kpart = 1,a_b_c%ahalo%np_in_halo  ! Main loop
-       !write(io_lun,*) 'Part: ',kpart,myid
+       !$omp master
        icall=1
        ind_part = a_b_c%ahalo%lab_hcell(kpart)
-       !write(io_lun,*) 'ind_part: ',ind_part
-       if(kpart>1) then  ! Is it a periodic image of the previous partition ?
+       new_partition = .true.
+
+       ! Check if this is a periodic image of the previous partition
+       if(kpart>1) then
           if(ind_part.eq.a_b_c%ahalo%lab_hcell(kpart-1)) then
-             icall=0
-          else ! Get the data
-             !write(io_lun,*) myid,' seq: ',size(a_b_c%parts%i_cc2seq)
-             ipart = a_b_c%parts%i_cc2seq(ind_part)
-             !write(io_lun,*) myid,' Alloc b_rem part: ',ipart
-             nnode = a_b_c%comms%neigh_node_list(kpart)
-             recv_part(nnode) = recv_part(nnode)+1
-             !write(io_lun,*) myid,' Alloc b_rem node: ',nnode
-             !write(io_lun,*) myid,' Alloc b_rem icc: ', a_b_c%parts%i_cc2node(ind_part)
-             !write(io_lun,*) myid,' Alloc b_rem alloc: ',allocated(b_rem)
-             if(allocated(b_rem)) deallocate(b_rem)
-             if(a_b_c%parts%i_cc2node(ind_part)==myid+1) then
-                lenb_rem = a_b_c%bmat(ipart)%part_nd_nabs
-             else
-                lenb_rem = a_b_c%comms%ilen3rec(ipart,nnode)
-             end if
-             allocate(b_rem(lenb_rem))
-             call prefetch(kpart,a_b_c%ahalo,a_b_c%comms,a_b_c%bmat,icall,&
-                  n_cont,part_array,a_b_c%bindex,b_rem,lenb_rem,b,myid,ilen2,&
-                  mx_msg_per_part,a_b_c%parts,a_b_c%prim,a_b_c%gcs,(recv_part(nnode)-1)*2)
-             !write(io_lun,*) 'b_rem: ',lenb_rem
-             ! Now point the _rem variables at the appropriate parts of
-             ! the array where we will receive the data
-             offset = 0
-             nbnab_rem => part_array(offset+1:offset+n_cont)
-             offset = offset+n_cont
-             ibind_rem => part_array(offset+1:offset+n_cont)
-             offset = offset+n_cont
-             ib_nd_acc_rem => part_array(offset+1:offset+n_cont)
-             offset = offset+n_cont
-             ibseq_rem => part_array(offset+1:offset+ilen2)
-             offset = offset+ilen2
-             npxyz_rem => part_array(offset+1:offset+3*ilen2)
-             offset = offset+3*ilen2
-             ibndimj_rem => part_array(offset+1:offset+ilen2)
-             if(offset+ilen2>3*a_b_c%parts%mx_mem_grp+ &
-                  5*a_b_c%parts%mx_mem_grp*a_b_c%bmat(1)%mx_abs) then
-                call cq_abort('mat_mult: error pointing to part_array ',kpart)
-             end if
-             ! Create ibpart_rem
-             call end_part_comms(myid,n_cont,nbnab_rem,ibind_rem,npxyz_rem,&
-                  ibpart_rem,ncover_yz,a_b_c%gcs%ncoverz)
+             new_partition = .false.
           end if
-       else ! Get the data
-          !write(io_lun,*) myid,' seq: ',size(a_b_c%parts%i_cc2seq)
+       end if
+
+       if(new_partition) then
+          ! Get the data
           ipart = a_b_c%parts%i_cc2seq(ind_part)
-          !write(io_lun,*) myid,' Alloc b_rem part: ',ipart
           nnode = a_b_c%comms%neigh_node_list(kpart)
           recv_part(nnode) = recv_part(nnode)+1
-          !write(io_lun,*) myid,' Alloc b_rem node: ',nnode
-          !write(io_lun,*) myid,' Alloc b_rem icc: ',a_b_c%parts%i_cc2node(ind_part)
-          !write(io_lun,*) myid,' Alloc b_rem alloc: ',allocated(b_rem)
           if(allocated(b_rem)) deallocate(b_rem)
           if(a_b_c%parts%i_cc2node(ind_part)==myid+1) then
              lenb_rem = a_b_c%bmat(ipart)%part_nd_nabs
           else
              lenb_rem = a_b_c%comms%ilen3rec(ipart,nnode)
           end if
-          call start_timer(tmr_std_allocation)
           allocate(b_rem(lenb_rem))
-          call stop_timer(tmr_std_allocation)
+          part_array = 0
+          b_rem = zero
           call prefetch(kpart,a_b_c%ahalo,a_b_c%comms,a_b_c%bmat,icall,&
                n_cont,part_array,a_b_c%bindex,b_rem,lenb_rem,b,myid,ilen2,&
                mx_msg_per_part,a_b_c%parts,a_b_c%prim,a_b_c%gcs,(recv_part(nnode)-1)*2)
-          lenb_rem = size(b_rem)
-          !write(io_lun,*) 'b_rem: ',lenb_rem
-          ! Now point the _rem variables at the appropriate parts of the array
-          ! where we will receive the data
-          offset = 0
-          nbnab_rem => part_array(offset+1:offset+n_cont)
-          offset = offset+n_cont
-          ibind_rem => part_array(offset+1:offset+n_cont)
-          offset = offset+n_cont
-          ib_nd_acc_rem => part_array(offset+1:offset+n_cont)
-          offset = offset+n_cont
-          ibseq_rem => part_array(offset+1:offset+ilen2)
-          offset = offset+ilen2
-          npxyz_rem => part_array(offset+1:offset+3*ilen2)
-          offset = offset+3*ilen2
-          ibndimj_rem => part_array(offset+1:offset+ilen2)
-          if(offset+ilen2>3*a_b_c%parts%mx_mem_grp+ &
+          ! Now point the _rem variables at the appropriate parts of
+          ! the array where we will receive the data
+          nbnab_rem_beg = 1
+          nbnab_rem_end = n_cont
+          ibind_rem_beg = nbnab_rem_end + 1
+          ibind_rem_end = nbnab_rem_end + n_cont
+          ib_nd_acc_rem_beg = ibind_rem_end + 1
+          ib_nd_acc_rem_end = ibind_rem_end + n_cont
+          ibseq_rem_beg = ib_nd_acc_rem_end + 1
+          ibseq_rem_end = ib_nd_acc_rem_end + ilen2
+          npxyz_rem_beg = ibseq_rem_end + 1
+          npxyz_rem_end = ibseq_rem_end + 3 * ilen2
+          ibndimj_rem_beg = npxyz_rem_end + 1
+          ibndimj_rem_end = npxyz_rem_end + ilen2
+
+          if(ibndimj_rem_end .gt. &
+               3*a_b_c%parts%mx_mem_grp+ &
                5*a_b_c%parts%mx_mem_grp*a_b_c%bmat(1)%mx_abs) then
-             call cq_abort('Error pointing to part_array !',kpart)
+             call cq_abort('mat_mult: error pointing to part_array ',kpart)
           end if
-          call end_part_comms(myid,n_cont,nbnab_rem,ibind_rem,npxyz_rem,&
+          ! Create ibpart_rem
+          call end_part_comms(myid,n_cont, &
+               part_array(nbnab_rem_beg:nbnab_rem_end), &
+               part_array(ibind_rem_beg:ibind_rem_end), &
+               part_array(npxyz_rem_beg:npxyz_rem_end), &
                ibpart_rem,ncover_yz,a_b_c%gcs%ncoverz)
-       end if ! End of the "if this isn't the first partition" loop
+       end if
+
        k_off=a_b_c%ahalo%lab_hcover(kpart) ! --- offset for pbcs
-       icall2=1
-       ! Check dimensions to be used in m_kern_min/max
-       !call check_mkm(kpart,a_b_c%ahalo%nh_part,a_b_c%ahalo%j_seq, &
-       !     a_b_c%ahalo%j_beg,&
-       !     ibind_rem,ibpart_rem,nbnab_rem,&
-       !     ibseq_rem,a_b_c%chalo%i_hbeg,k_off,icall2,&
-       !     a_b_c%ahalo%mx_part,a_b_c%gcs%mx_gcover,a_b_c%ahalo%mx_halo, &
-       !     a_b_c%parts%mx_mem_grp, &
-       !     a_b_c%bmat(1)%mx_abs,a_b_c%gcs%mx_mcover)
-       !if(icall2.eq.1) then  ! If check is OK, do the mult
+       ! Omp master doesn't include a implicit barrier. We want master
+       ! to be finished with comms before calling the multiply kernels
+       ! hence the explicit barrier
+       !$omp end master
+       !$omp barrier
+
        if(a_b_c%mult_type.eq.1) then  ! C is full mult
-          call m_kern_max( k_off,kpart,ib_nd_acc_rem, ibind_rem,nbnab_rem,&
-               ibpart_rem,ibseq_rem,ibndimj_rem,&
+          call m_kern_max( k_off,kpart,&
+               part_array(ib_nd_acc_rem_beg:ib_nd_acc_rem_end), &
+               part_array(ibind_rem_beg:ibind_rem_end),&
+               part_array(nbnab_rem_beg:nbnab_rem_end),&
+               ibpart_rem,&
+               part_array(ibseq_rem_beg:ibseq_rem_end),&
+               part_array(ibndimj_rem_beg:ibndimj_rem_end),&
                atrans,b_rem,c,a_b_c%ahalo,a_b_c%chalo,a_b_c%ltrans,&
                a_b_c%bmat(1)%mx_abs,a_b_c%parts%mx_mem_grp, &
                a_b_c%prim%mx_iprim, lena, lenb_rem, lenc)
        else if(a_b_c%mult_type.eq.2) then ! A is partial mult
-          call m_kern_min( k_off,kpart,ib_nd_acc_rem, ibind_rem,nbnab_rem,&
-               ibpart_rem,ibseq_rem,ibndimj_rem,&
+          call m_kern_min( k_off,kpart, &
+               part_array(ib_nd_acc_rem_beg:ib_nd_acc_rem_end), &
+               part_array(ibind_rem_beg:ibind_rem_end),&
+               part_array(nbnab_rem_beg:nbnab_rem_end),&
+               ibpart_rem,&
+               part_array(ibseq_rem_beg:ibseq_rem_end),&
+               part_array(ibndimj_rem_beg:ibndimj_rem_end),&
                atrans,b_rem,c,a_b_c%ahalo,a_b_c%chalo,a_b_c%ltrans,&
                a_b_c%bmat(1)%mx_abs,a_b_c%parts%mx_mem_grp, &
                a_b_c%prim%mx_iprim, lena, lenb_rem, lenc)
        end if
-       !else
-       !   call cq_abort('mat_mult: error in check_mkm ',kpart)
-       !end if
-    end do ! End of the kpart=1,ahalo%np_in_halo loop !
-! #ifdef OMP_M
-! !$omp end do
-! !$omp end parallel
-! #end if
+       !$omp barrier
+    end do main_loop
+    !$omp end parallel
     call start_timer(tmr_std_allocation)
     if(allocated(b_rem)) deallocate(b_rem)
     call stop_timer(tmr_std_allocation)
@@ -365,36 +321,36 @@ contains
           !write(io_lun,*) 'Send done ',i,myid
        end do
     end if
-    call my_barrier
+    !call my_barrier
     call start_timer(tmr_std_allocation)
     deallocate(nreqs,STAT=stat)
     if(stat/=0) call cq_abort('mat_mult: error deallocating nreqs')
     call stop_timer(tmr_std_allocation)
-    call my_barrier
+    !call my_barrier
     ! --- for type 2, make backward local transpose of A-matrix -----------
     if(a_b_c%mult_type.eq.2) then
        invdir=1
        call loc_trans( a_b_c%ltrans, a_b_c%ahalo,a,lena,atrans,lena,invdir)
     end if
-    call my_barrier
+    !call my_barrier
     call start_timer(tmr_std_allocation)
     deallocate(atrans,STAT=stat)
     if(stat/=0) call cq_abort('mat_mult: error deallocating atrans')
     call stop_timer(tmr_std_allocation)
-    call my_barrier
+    !call my_barrier
     call start_timer(tmr_std_allocation)
     deallocate(ibpart_rem,STAT=stat)
     if(stat/=0) call cq_abort('mat_mult: error deallocating ibpart_rem')
     deallocate(recv_part,STAT=stat)
     if(stat/=0) call cq_abort('mat_mult: error deallocating recv_part')
     call stop_timer(tmr_std_allocation)
-    call my_barrier
+    !call my_barrier
     !deallocate(b_rem,STAT=stat)
     !if(stat/=0) call cq_abort('mat_mult: error deallocating b_rem')
     !call my_barrier
     if(iprint_mat>3.AND.myid==0) then
        t1 = mtime()
-       write(io_lun,*) 'mult time: ',t1-t0
+       write(io_lun,fmt='(10x,a,f16.6)') 'mult time: ',t1-t0
     end if
 
     call stop_timer(tmr_std_matmult)

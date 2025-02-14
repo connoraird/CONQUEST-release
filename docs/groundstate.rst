@@ -101,6 +101,12 @@ arbitrary vector from the origin of the Brillouin zone, by specifying:
    Diag.MPShiftY 0.0
    Diag.MPShiftZ 0.0
 
+For the Monkhorst-Pack approach, instead of specifying the number of
+points in x, y and z explicitly, they can be set automatically by giving
+a spacing in reciprocal space: ``Diag.dk`` where units are inverse Bohr
+radii.  The number of points will be chosen so that :math:`2\pi/(a\times dk)`
+is less than the value specified.
+
 Alternatively, the points in reciprocal space can be specified
 explicitly by giving a number of points and their locations and weights:
 
@@ -156,6 +162,40 @@ with fewer k-points, and is selected as:
 where ``Diag.MPOrder`` specifies the order of the Methfessel-Paxton
 expansion.  It is recommended to start with the lowest order and
 increase gradually, testing the effects.
+
+Go to :ref:`top <groundstate>`.
+
+.. _gs_pad:
+
+Padding Hamiltonian matrix by setting block size
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With the default setting, the size of Hamiltonian and overlap matrices 
+is determined by the total number of support functions. 
+It can be a prime number and timing of diagonalisation can be very slow 
+in such cases, since the division of the matrix into small pieces is difficult.
+
+By padding, we can change the size of Hamiltonian matrix to improve 
+the efficiency of the diagonalisation. To set an appropriate value 
+for the block size of the matrix, specify the following two variables.
+
+ ::
+
+  Diag.BlockSizeR       20
+  Diag.BlockSizeC       20
+
+Note that these two numbers should be the same when padding 
+(and when using ELPA which will be introduced to CONQUEST soon).
+We suggest that an appropriate value is between 20 and 200, but 
+this should be tested. 
+
+The option for padding was introduced after v1.2, and if you would 
+like to remove it, set the following variable. 
+
+ ::
+
+  Diag.PaddingHmatrix              F 
+
 
 Go to :ref:`top <groundstate>`.
 
@@ -261,7 +301,31 @@ find the energy.
 
 Go to :ref:`top <groundstate>`.
 
-.. _ gs_scf_adv:
+.. _gs_scf_restart:
+
+Restarting SCF
+~~~~~~~~~~~~~~
+
+The SCF cycle can be restarted from a previous density matrix or
+charge density, which may significantly speed up convergence.
+The density matrix is automatically written out in the files ``Kmatrix2.*`` or
+``Lmatrix2.*`` (depending on whether diagonalisation or linear scaling
+is being used).  These files are read in, and the initial
+charge density made from them by setting the flags:
+
+  ::
+
+   General.LoadDM T
+   SC.MakeInitialChargeFromK T
+
+The charge density is not written out by default; this can be changed by
+setting ``IO.DumpChargeDensity T`` which results in the files ``chden.nnn``
+being created.  To read these in as the initial charge density, the flag
+``General.LoadRho T`` should be set.
+
+Go to :ref:`top <groundstate>`.
+
+.. _gs_scf_adv:
 
 Advanced options
 ~~~~~~~~~~~~~~~~
@@ -274,7 +338,7 @@ In general, we write:
 
 .. math::
 
-   rho_{n+1}^{in} = \sum_{i} \alpha_i \left[ \rho_{i}^{in} + A R_{i}
+   \rho_{n+1}^{in} = \sum_{i} \alpha_i \left[ \rho_{i}^{in} + A R_{i}
    \right]
 
 where :math:`R_{i}` is the residual at iteration :math:`i`, defined above.  The
@@ -300,7 +364,7 @@ Fourier transform of the residual, :math:`\tilde{R}` as:
 
 .. math::
 
-    \tilde{R} \frac{q^2}{q^2 - q^2_0}
+    \tilde{R} \frac{q^2}{q^2 + q^2_0}
 
 where :math:`q^2_0` is the square of the Kerker factor and :math:`q` is a
 wavevector.  You should test values of :math:`q_0` around

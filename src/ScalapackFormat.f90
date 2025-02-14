@@ -155,6 +155,9 @@ module ScalapackFormat
 
   ! Dimension of matrix (always square)
   integer :: matrix_size
+  ! Dimension of padded H (and S) matrix 
+  logical :: flag_padH
+  integer :: matrix_size_padH
   ! Block sizes (not necessarily square)
   integer :: block_size_r, block_size_c
   ! Processor group
@@ -252,12 +255,16 @@ contains
 !!    Added timer
 !!   2011/02/13 L.Tong
 !!    Added k-point parallelisation
+!!   2023/08/02 tsuyoshi
+!!    Changes for padding of H and S matrices
 !!  SOURCE
 !!
   subroutine allocate_arrays (nkp)
 
+    use datatypes, ONLY: double
     use global_module, ONLY: iprint_DM, numprocs
     use GenComms, ONLY: cq_abort, myid
+    use numbers, ONLY: RD_ERR
 
     implicit none
 
@@ -266,16 +273,26 @@ contains
 
     ! Local variables
     integer :: stat
+    logical :: flag_err
 
-    if(iprint_DM>2.AND.myid==0) write(io_lun,*) myid,' Starting Allocate Arrays'
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,i5,a)') myid,' Starting Allocate Arrays'
 
     ! Calculate maximum numbers of blocks in different directions
-    blocks_r = (matrix_size/block_size_r)
-    blocks_c = (matrix_size/block_size_c)
+    if(flag_padH) then
+       blocks_r = ceiling((real(matrix_size,double)-RD_ERR)/block_size_r)
+       blocks_c = ceiling((real(matrix_size,double)-RD_ERR)/block_size_c)
+       if(blocks_r .ne. blocks_c) call cq_abort("ScalapackFormat: blocks_r /= blocks_c")
+       matrix_size_padH = blocks_r * block_size_r
+    else
+       blocks_r = (matrix_size/block_size_r)
+       blocks_c = (matrix_size/block_size_c)
+       matrix_size_padH = matrix_size
+    endif
+    if(myid==0.AND.iprint_DM>1) write(io_lun,*) "matrix_size & matrix_size_padH = ",matrix_size, matrix_size_padH
     if(myid==0.AND.iprint_DM>3) write(io_lun,1) blocks_r,blocks_c
     maxrow = floor(real(blocks_r/proc_rows))+1
     maxcol = floor(real(blocks_c/proc_cols))+1
-    if(iprint_DM>1.AND.myid==0) write(io_lun,*) 'maxrow, maxcol: ',maxrow,maxcol
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,a,2i5)') 'maxrow, maxcol: ',maxrow,maxcol
     call start_timer(tmr_std_allocation)
     allocate(mapx(numprocs,maxrow,maxcol),mapy(numprocs,maxrow,maxcol),STAT=stat)
     if(stat/=0) call cq_abort("ScalapackFormat: Could not alloc map",stat)
@@ -290,7 +307,7 @@ contains
          SC_row_block_atom(block_size_r,blocks_r),&
          SC_col_block_atom(block_size_c,blocks_c),STAT=stat)
     if(stat/=0) call cq_abort("ScalapackFormat: Could not alloc bxa var",stat)
-    allocate(CQ2SC_row_info(matrix_size), my_row(matrix_size),proc_start(numprocs), STAT=stat)
+    allocate(CQ2SC_row_info(matrix_size_padH), my_row(matrix_size),proc_start(numprocs), STAT=stat)
     nprocs_max = floor(real(numprocs/proc_groups))+1
     nkpoints_max = floor(real(nkp/proc_groups))+1
     allocate(pg_procs(proc_groups,nprocs_max),pg_kpoints(proc_groups,nkpoints_max),STAT=stat)
@@ -301,7 +318,7 @@ contains
     if(stat/=0) call cq_abort("ScalapackFormat: Could not alloc pgroup",stat)
     call stop_timer(tmr_std_allocation)
     return
-1   format(2x,'AllocArr: block sizes are: ',2i5)
+1   format(10x,'AllocArr: block sizes are: ',2i5)
   end subroutine allocate_arrays
 !!***
 
@@ -340,7 +357,7 @@ contains
     ! Local variables
     integer :: stat
 
-    if(iprint_DM>2.AND.myid==0) write(io_lun,*) myid,' Starting Deallocate Arrays'
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,a)') myid,' Starting Deallocate Arrays'
     call start_timer(tmr_std_allocation)
     deallocate(CC_to_SC,CQ2SC_row_info, my_row,proc_start, STAT=stat)
     if(stat/=0) call cq_abort("ScalapackFormat: Could not dealloc CC2SC, CQ2SC",stat)
@@ -492,9 +509,9 @@ contains
     integer :: i, j, n, nrow, ncol, prow, pcol, proc
     integer :: ng
 
-    if(iprint_DM>2.AND.myid==0) write(io_lun,*) myid,' Starting Ref To SC Blocks'
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(8x,a)') 'Starting Ref To SC Blocks'
     ! Construct processor ids
-    if(iprint_DM>1.AND.myid==0) write(io_lun,fmt="(2x,'Scalapack Processor Grid')") 
+    if(iprint_DM>2.AND.myid==0) write(io_lun,fmt="(8x,'Scalapack Processor Grid')") 
     do ng = 1, proc_groups
        n = 1
        do i=1,proc_rows
@@ -503,12 +520,12 @@ contains
              if(n>N_procs_in_pg(ng)) call cq_abort('Ref2SC: Too many processors in group',ng,n)
              n = n + 1
           end do
-          if(iprint_DM>1.AND.myid==0) write(io_lun,*) (procid(ng,i,j),j=1,proc_cols)
+          if(iprint_DM>4.AND.myid==0) write(io_lun,*) (procid(ng,i,j),j=1,proc_cols)
        end do
     end do
     ! now build list of blocks and where they go
     if(iprint_DM>3.AND.myid==0) &
-         write(io_lun,fmt="(2x,'Map from local block on processor (first three) to reference block (last two)')")
+         write(io_lun,fmt="(8x,'Map from local block on processor (first three) to reference block (last two)')")
     if(iprint_DM>3.AND.myid==0) write(io_lun,fmt="(27x,'Proc Nrow Ncol Mapx Mapy')") 
     do ng = 1, proc_groups
        do i=1,blocks_r                          ! Rows of blocks in ref format
@@ -524,7 +541,7 @@ contains
              mapy(proc,nrow,ncol) = j
              proc_block(ng, i, j) = proc ! Owner of block (linear number)
              if(iprint_DM>3.AND.myid==0) &
-                  write(io_lun,fmt="(2x,'Proc: ',i5,'Mapx and y: ',6i5)") myid,ng,proc,nrow,ncol,i,j
+                  write(io_lun,fmt="(8x,'Proc: ',i5,'Mapx and y: ',6i5)") myid,ng,proc,nrow,ncol,i,j
           end do
        end do
     end do
@@ -602,13 +619,13 @@ contains
     integer :: i,j,m,n,row,col,proc,ng
     integer :: row_max_n, col_max_n, loc_max_row, loc_max_col
 
-    if(iprint_DM>1.AND.myid==0) write(io_lun,3)
+    if(iprint_DM>3.AND.myid==0) write(io_lun,3)
     if(iprint_DM>3.AND.myid==0) write(io_lun,4)
     ! The first row_max_n procs have 1 more block than the rest
     row_max_n = mod(blocks_r,proc_rows)
     col_max_n = mod(blocks_c,proc_cols)
-    if(iprint_DM>1.AND.myid==0) write(io_lun,*) 'N for row, col: ',row_max_n, col_max_n
-    if(iprint_DM>1.AND.myid==0) write(io_lun,*) 'Loc_max_row, col: ',&
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(8x,a,2i4)') 'N for row, col: ',row_max_n, col_max_n
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(8x,a,2f4.0)') 'Loc_max_row, col: ',&
          aint(real(blocks_r/proc_rows)),aint(real(blocks_c/proc_cols))
     my_row = 0
     ! first record proc_start(:)%rows and %cols map, this is proc proc dependent
@@ -670,10 +687,10 @@ contains
        end do
     end do
     return
-1   format(2x,'MakeMaps: proc,row,col,map,n,m: ',7i5)
-2   format(2x,'MakeMaps: proc,n,max,my_row: ',4i5)
-3   format(1x,'Welcome to make_maps')
-4   format(2x,'Here we will create maps from ref to SC and back again')
+1   format(8x,'MakeMaps: proc,row,col,map,n,m: ',7i5)
+2   format(8x,'MakeMaps: proc,n,max,my_row: ',4i5)
+3   format(8x,'Welcome to make_maps')
+4   format(8x,'Here we will create maps from ref to SC and back again')
   end subroutine make_maps
 !!***
 
@@ -743,6 +760,8 @@ contains
 !!    Added salutation at start of subroutine
 !!   2008/05/19 ast
 !!    Added timer
+!!   2023/07/20 tsuyoshi
+!!    Change for padding H and S matrices  (to improve the efficiency of diagonalization)
 !!  SOURCE
 !!
   subroutine find_SC_row_atoms 
@@ -756,11 +775,27 @@ contains
 
     ! Local variables
     integer :: i, patom, part, proc, CC, brow, SCblock, supfn
+    integer :: num_elem_pad, nproc_pad, iblock_pad, end_elem_pad, start_elem_pad
 
-    if(iprint_DM>3.AND.myid==0) write(io_lun,*) myid,' Starting Find SC Row Atoms'
+    ! For padding H and S matrices
+    num_elem_pad = matrix_size_padH - matrix_size     ! # of padded elements
+    nproc_pad = mod( blocks_r-1, proc_rows ) + 1      ! ID of the responsible process for the padded part
+    iblock_pad = sum( proc_start( 1 : nproc_pad )%rows ) ! # of blocks before reaching the block including the padded part
+    end_elem_pad = block_size_r * iblock_pad          ! element ID for the end of the padded part
+    start_elem_pad = end_elem_pad - num_elem_pad + 1  ! element ID for the start of the padded part
+
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,i5,a)') myid,' Starting Find SC Row Atoms'
     ! -----------------------------------------------------------------
     ! Loop over matrix using processor/partition/sequence order
     i = 1 ! Indexes matrix row
+    ! For padding H and S matrices:  
+    !  CQ2SC_row_info(:)%CClabel is now initialised and some of the values can be kept 0 for the padded parts.
+    !  Other members are basically not used for padded parts, but also initialised to be 0 for safety.
+     CQ2SC_row_info(:)%CClabel = 0
+     CQ2SC_row_info(:)%support_fn = 0
+     CQ2SC_row_info(:)%atom = 0
+     CQ2SC_row_info(:)%partition = 0
+    
     do proc=1,numprocs
        proc_start(proc)%startrow = i ! This is where data for the processor starts
        if(parts%ng_on_node(proc)>0) then
@@ -774,7 +809,8 @@ contains
                       CQ2SC_row_info(i)%partition = part
                       CQ2SC_row_info(i)%CClabel = CC
                       i = i+1
-                      if(i>matrix_size+1) call cq_abort('Too many support functions !',i)
+                      if( i==start_elem_pad ) i=i+num_elem_pad
+                      if(i>matrix_size_padH+1) call cq_abort('Too many support functions !',i)
                    end do
                 end do
              end if
@@ -801,14 +837,14 @@ contains
           if(iprint_DM>3.AND.myid==0) &
                write(io_lun,2) myid,CQ2SC_row_info(i)%CClabel,CQ2SC_row_info(i)%atom,CQ2SC_row_info(i)%support_fn
           i=i+1
-          if(i>matrix_size+1) call cq_abort('Too many support functions !',i)
+          if(i>matrix_size_padH+1) call cq_abort('Too many support functions !',i)
        end do
     end do
     ! End loop over matrix using blocks
     ! -----------------------------------------------------------------
     return
 
-2   format(2x,'Proc: ',i5,' Part, Seq, SupFn: ',3i5)
+2   format(8x,'Proc: ',i5,' Part, Seq, SupFn: ',3i5)
   end subroutine find_SC_row_atoms
 !!***
 
@@ -853,6 +889,8 @@ contains
 !!    Added timer
 !!   2013/07/05 dave
 !!    Moved check on cb overrunning so that erroneous error goes away
+!!   2023/7/20 tsuyoshi
+!!    Changed for the version of padding H matrix
 !!  SOURCE
 !!
   subroutine find_ref_row_atoms 
@@ -866,16 +904,29 @@ contains
     integer :: rb, cb, SCblockx, blockrow, blockcol
     integer :: part, seq, supfn
 
-    if(iprint_DM>3.AND.myid==0) write(io_lun,*) myid,' Starting Find Ref Row Atoms'
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,i5,a)') myid,' Starting Find Ref Row Atoms'
     blockcol = 1
     cb = 1
-    if(iprint_DM>3.AND.myid==0) write(io_lun,*) '  blocks, size: ',blocks_r, block_size_r
+    ! For padding of H matrix, we need to initialize ref_row_block_atom and ref_col_block_atom,
+    ! because they need to be kept 0 for the padding part.  
+    !  (it might be safer to initialize other members (atom and support_fn)
+    ref_row_block_atom(:,:)%part = 0
+    ref_col_block_atom(:,:)%part = 0
+    ! for safety, other members are also initialised.
+    ref_row_block_atom(:,:)%atom = 0
+    ref_col_block_atom(:,:)%atom = 0
+    ref_row_block_atom(:,:)%support_fn = 0
+    ref_col_block_atom(:,:)%support_fn = 0
+
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,a,2i5)') '  blocks, size: ',blocks_r, block_size_r
     ! Loop over reference row blocks
     do rb = 1,blocks_r
        SCblockx = ref_to_SCx(rb,1)  ! find equivalent block in SC format
        if(iprint_DM>3.AND.myid==0) write(io_lun,2) myid,rb,SCblockx
        do blockrow = 1,block_size_r ! Loop over rows in block
           part = SC_row_block_atom(blockrow,SCblockx)%part
+          !For the padded part, setting of ref_row_block_atom should not be done. (kept to be 0)
+          if(part == 0) cycle   
           seq  = SC_row_block_atom(blockrow,SCblockx)%atom
           supfn  = SC_row_block_atom(blockrow,SCblockx)%support_fn
           if(cb>blocks_c+1.OR.cb==blocks_c+1.AND.blockcol>1) then
@@ -897,8 +948,8 @@ contains
           end if
        end do
     end do
-1   format(2x,'RefRowAt Proc: ',i5,' Part, seq, SupFn: ',3i5,' Block, row: ',2i5)
-2   format(2x,'RefRowAt Proc: ',i5,' Ref block, SC block: ',2i5)
+1   format(8x,'RefRowAt Proc: ',i5,' Part, seq, SupFn: ',3i5,' Block, row: ',2i5)
+2   format(8x,'RefRowAt Proc: ',i5,' Ref block, SC block: ',2i5)
     return
   end subroutine find_ref_row_atoms
 !!***
@@ -940,6 +991,8 @@ contains
 !!    Added salutation at start of subroutine
 !!   2008/05/19 ast
 !!    Added timer
+!!   2023/07/20 tsuyoshi
+!!    Change for padding Hamiltonian and overlap matrices
 !!  SOURCE
 !!
   subroutine find_SC_col_atoms  
@@ -954,13 +1007,21 @@ contains
     ! Local variables
     integer :: cb, blockcol, refc, part, seq, supfn, np_in_cell
 
-    if(iprint_DM>3.AND.myid==0) write(io_lun,*) myid,' Starting Find SC Col Atoms'
+    ! for padding H matrix, we need to initialise SC_col_block_atom
+          SC_col_block_atom(:,:)%part = 0
+     ! for safety other members are also initialised.
+          SC_col_block_atom(:,:)%atom = 0
+          SC_col_block_atom(:,:)%support_fn = 0
+         
+    if(iprint_DM>3.AND.myid==0) write(io_lun,fmt='(10x,i5, a)') myid,' Starting Find SC Col Atoms'
     ! Loop over SC blocks
     do cb = 1,blocks_c
        refc = SC_to_refy(1,cb) ! find equivalent number in reference format
        if(iprint_DM>3.AND.myid==0) write(io_lun,2) myid, cb, refc
        do blockcol = 1,block_size_c
           part = ref_col_block_atom(blockcol,refc)%part  
+          ! for the padded part (padding Hmatrix version)
+          if(part == 0) cycle    ! for padding H and S matrices  (for padded part)
           seq  = ref_col_block_atom(blockcol,refc)%atom  
           supfn  = ref_col_block_atom(blockcol,refc)%support_fn
           SC_col_block_atom(blockcol,cb)%part = part
@@ -983,9 +1044,9 @@ contains
     endif
     return
 
-2   format(2x,'Proc: ',i5,' SC col, ref col: ',2i5)
-3   format(2x,3i5,' : ',4i5)
-4   format(2x,'On proc ',i3,' CC_to_SC is',/,2x,' Part Atom  SFn   Label')
+2   format(8x,'Proc: ',i5,' SC col, ref col: ',2i5)
+3   format(8x,3i5,' : ',4i5)
+4   format(8x,'On proc ',i3,' CC_to_SC is',/,2x,' Part Atom  SFn   Label')
   end subroutine find_SC_col_atoms
 !!***
 end module ScalapackFormat

@@ -138,7 +138,7 @@ contains
     use primary_module,ONLY: bundle, domain
     use cover_module,  ONLY: DCS_parts
     use atomic_density, ONLY: rcut_dens
-    use GenComms, ONLY: cq_abort
+    use GenComms, ONLY: cq_abort, cq_warn
     use functions_on_grid, ONLY: gridsize
     use block_module, ONLY: n_pts_in_block, nx_in_block,ny_in_block,nz_in_block
     use blip, ONLY: blip_info
@@ -180,8 +180,7 @@ contains
        call alloc_halo_atm(halo_atoms_of_blocks(nlpf), max_recv_node_BtoG,max_halo_part,DCS_parts%mx_mcover)
     else
        ! Note: this is a problem because max_recv_node_BtoG isn't defined
-       if(myid==0) write(io_lun,*) ' WARNING !! '
-       if(myid==0) write(io_lun,*) ' before alloc_halo_atm : rcut_atomf < rcut_proj '
+       call cq_warn("set_bg","rcut_atomf<rcut_proj for at least one species")
        call alloc_halo_atm(halo_atoms_of_blocks(nlpf), numprocs,max_halo_part,DCS_parts%mx_mcover)
     endif
     ! Densities
@@ -416,7 +415,7 @@ contains
 
                 ! if(distsq < rcutsq) then  ! If it is a neighbour block,...
                 ! if(distsq < rcutsq+very_small) then  ! If it is a neighbour block,...
-                if(distsq < rcutsq(spec)+RD_ERR) then  ! If it is a neighbour block,...
+                if(distsq < rcutsq(spec)-RD_ERR) then  ! If it is a neighbour block,...
 
                    ! nxmin etc. (those will be used in BtoG trans.)
                    if(naba_blk%no_naba_blk(inp)==0) then
@@ -494,7 +493,7 @@ contains
              if(iprint_index>3.AND.myid==0) write(io_lun,101) inp,naba_blk%nxmin(inp),naba_blk%nxmax(inp),&
                   naba_blk%nymin(inp),naba_blk%nymax(inp),&
                   naba_blk%nzmin(inp),naba_blk%nzmax(inp)
-101          format('inp =',i4,' nxmin,max= ',2i6,' ny ',2i6,' nz ',2i6)
+101          format(8x,'inp =',i4,' nxmin,max= ',2i6,' ny ',2i6,' nz ',2i6)
 
           enddo ! ni (atoms in the primary sets of partitions)
 
@@ -627,7 +626,7 @@ contains
                 zmax= zmin+ dcellz_block -dcellz_grid
                 call distsq_blk_atom&
                      (xatom,yatom,zatom,xmin,xmax,ymin,ymax,zmin,zmax,distsq)
-                if(distsq < rcutsq(spec)+RD_ERR) then  ! If it is a neighbour block,...
+                if(distsq < rcutsq(spec)-RD_ERR) then  ! If it is a neighbour block,...
 
                    ind_block= BCS_blocks%lab_cell(iblock)  !CC in a sim. cell
                    if(ind_block > blocks%mx_gcell) call cq_abort(' ERROR: ind_block in get_naba_BCSblk',ind_block,blocks%mx_gcell)
@@ -846,7 +845,7 @@ contains
                 call distsq_blk_atom &
                      (xatom,yatom,zatom,xmin,xmax,ymin,ymax,zmin,zmax,distsq)
                 spec = species_glob( id_glob( parts%icell_beg(DCS_parts%lab_cell(np)) +ni-1 ))
-                if(distsq<rcutsq(spec)+RD_ERR) then
+                if(distsq<rcutsq(spec)-RD_ERR) then
                 !if(distsq < rcutsq) then  ! have found a naba atom
                    ia=ia+1             ! seq. no. of naba atoms for iprim_blk
                    halo_set%ihalo(icover)=1     ! icover-th atom is a halo atom
@@ -1094,7 +1093,7 @@ contains
                 call distsq_blk_atom(xatom,yatom,zatom,xmin,xmax,ymin,ymax,zmin,zmax,distsq)
                 spec = species_glob( id_glob( parts%icell_beg(DCS_parts%lab_cell(np)) +ni-1 ))
 
-                if(distsq < rcutsq(spec)+RD_ERR) then  ! have found a naba atom
+                if(distsq < rcutsq(spec)-RD_ERR) then  ! have found a naba atom
                    ia=ia+1          
                    atoms = .true.
                    ihalo(icover) = 1
@@ -1844,7 +1843,7 @@ contains
           ia2=atoms_on_node(iprim,nnd_rem)           
 
           if(iprim /= atom_number_on_node(ia2)) &
-               write(io_lun,*) ' ERROR: IPRIM in make_table! '
+               write(io_lun,*) ' ERROR: IPRIM in make_table! ',iprim, atom_number_on_node(ia2)
           !write(io_lun,102) ii,j,ia1,ia2
           !102 format(6x,'ii,j,ia1,ia2 = ',2i4,2i6)
           ! glob no. of iprim-th atm on nnd_rem

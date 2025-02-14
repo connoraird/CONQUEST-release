@@ -7,6 +7,7 @@ ENERGY_OBJS = H_matrix_module.o \
               PosTan_module.o \
               DMMinModule.o \
               DiagModule${DIAG_DUMMY}.o \
+              ELPAModule${ELPA_DUMMY}.o \
               ScalapackFormat.o \
               blip_minimisation.module.o \
               blip_gradient.module.o \
@@ -26,6 +27,7 @@ ENERGY_OBJS = H_matrix_module.o \
               functions_on_grid_module.o\
               cdft_data_module.o\
               cdft_module.o\
+              polarisation_module.o\
               XC_${XC_LIBRARY}_module.o\
               DFT_D2_module.o\
               vdWMesh_module.o\

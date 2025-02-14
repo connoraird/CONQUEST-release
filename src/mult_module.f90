@@ -1135,6 +1135,8 @@ contains
   !!    Deallocating NA projector matrices
   !!   2018/07/11 12:12 dave
   !!    Adding dissociate_matrices and deallocation of mat for empty bundle fix
+  !!   2024/06/12 18:00 nakata
+  !!    Adding end_ops for SXrange and Xrange
   !!  SOURCE
   !!
   subroutine fmmi(prim)
@@ -1381,6 +1383,8 @@ contains
     call end_ops(prim,TSrange,TSmatind)
     call end_ops(prim,THrange,THmatind)
     call end_ops(prim,TLrange,TLmatind)
+    call end_ops(prim,SXrange,SXmatind)
+    call end_ops(prim,Xrange,Xmatind)
     if (atomf.ne.sf) then
        call end_ops(prim,aSa_range,aSa_matind)
        call end_ops(prim,aHa_range,aHa_matind)
@@ -1535,24 +1539,24 @@ contains
     if (dophi .and. (.not. present(mat_phi))) &
          call cq_abort("LNVmm needs proper matrix for phi")
     myid = inode - 1
-    if (iprint_mat > 3) t0 = mtime()
+    if (iprint_mat > 4) t0 = mtime()
 
     do ss = ss_start, ss_end
        ss_SF = 1
        if (flag_SpinDependentSF) ss_SF = ss
  
-       if (iprint_mat > 3 .and. nspin == 2) then
+       if (iprint_mat > 4 .and. nspin == 2) then
           if (inode == ionode) write (io_lun, '(1x,"For spin = ",i1," :")') ss
        end if
        call matrix_product(matL(ss), matS(ss_SF), matLS(ss), mult(L_S_LS))
-       if (iprint_mat > 3) then
+       if (iprint_mat > 4) then
           t1 = mtime()
           if (inode == ionode) write (io_lun, *) 'LS time: ', t1 - t0
           t0 = t1
        end if
        call matrix_transpose(matLS(ss), matSL(ss))
 
-       if (iprint_mat > 3) then
+       if (iprint_mat > 4) then
           t1 = mtime()
           if (inode == ionode) write (io_lun, *) 'LS trans time: ', t1 - t0
           t0 = t1
@@ -1560,19 +1564,19 @@ contains
        if (doM1 .OR. doM2 .OR. doM3) then
           matLH(ss) = allocate_temp_matrix(LHrange, LH_trans)
           matHL(ss) = allocate_temp_matrix(LHrange, LH_trans)
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LH alloc time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matL(ss), matH(ss), matLH(ss), mult(L_H_LH))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LH time: ', t1 - t0
              t0 = t1
           end if
           call matrix_transpose(matLH(ss), matHL(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LH trans time: ', t1 - t0
              t0 = t1
@@ -1591,99 +1595,99 @@ contains
           call matrix_transpose(matLHLSL(ss), matLSLHL(ss))
        endif
        if (doM3) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           matHLS(ss) = allocate_temp_matrix(LSLrange, LSL_trans)
           matSLH(ss) = allocate_temp_matrix(LSLrange, LSL_trans)
           matA(ss) = allocate_temp_matrix(LSLrange, LSL_trans)
           matB(ss) = allocate_temp_matrix(Lrange, L_trans)
           matC(ss) = allocate_temp_matrix(Lrange, L_trans)
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'Alloc time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matHL(ss), matS(ss_SF), matHLS(ss), mult(HL_S_LSL))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'HLS time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matHL(ss), matS(ss_SF), matHLS(ss), mult(HL_S_LSL))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'HLS time: ', t1 - t0
              t0 = t1
           end if
           call matrix_transpose(matHLS(ss), matSLH(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'HLS trans time: ', t1 - t0
              t0 = t1
           end if
           call matrix_sum(zero, matA(ss), two, matHLS(ss))
           call matrix_sum(one, matA(ss), one, matSLH(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'A time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matA(ss), matSL(ss), matB(ss), &
                mult(HLS_LS_L))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'B time: ', t1 - t0
              t0 = t1
           end if
           call matrix_transpose(matB(ss), matC(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'B trans time: ', t1 - t0
              t0 = t1
           end if
        endif
        if (dophi) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           matSLS(ss) = allocate_temp_matrix(SLSrange, 0)
           matSLSLS(ss) = allocate_temp_matrix(Lrange, 0)
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'SLS alloc time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matSL(ss), matS(ss_SF), matSLS(ss), &
                               mult(SL_S_SLS))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'SLS time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matSLS(ss), matSL(ss), matSLSLS(ss), &
                               mult(SLS_LS_L))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'SLSLS time: ', t1 - t0
              t0 = t1
           end if
        end if
        if (doK .OR. doE .OR. doM4) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           matLSL(ss) = allocate_temp_matrix(LSLrange, 0)
           matLSLSL(ss) = allocate_temp_matrix(Hrange, 0)
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LSL alloc time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matLS(ss), matL(ss), matLSL(ss), &
                mult(LS_L_LSL))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LSL time: ', t1 - t0
              t0 = t1
           end if
           call matrix_product(matLSL(ss), matLS(ss), &
                matLSLSL(ss), mult(LSL_SL_H))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'LSLSL time: ', t1 - t0
              t0 = t1
@@ -1693,7 +1697,7 @@ contains
           ! work out matK or matK_dn
           call matrix_sum(zero, matK(ss), three, matLSL(ss))
           call matrix_sum(one, matK(ss), -two, matLSLSL(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'K time: ', t1 - t0
              t0 = t1
@@ -1707,9 +1711,9 @@ contains
           call matrix_sum(one, mat_M4(ss), -12.0_double, matLSLSL(ss))
        end if
        if (doE) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           energy(ss) = matrix_product_trace(matH(ss), matK(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'energy dot time: ', t1 - t0
              t0 = t1
@@ -1721,36 +1725,36 @@ contains
           call matrix_sum(one,  mat_M12(ss), -two,  matLSLHL(ss))
        endif
        if (doM3) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           call matrix_sum(zero, mat_M3(ss), three, matHLS(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'M3 time: ', t1 - t0
              t0 = t1
           end if
           call matrix_sum(one, mat_M3(ss), three, matSLH(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'M3 add time: ', t1 - t0
              t0 = t1
           end if
           call matrix_sum(one, mat_M3(ss), -one, matB(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'M3 axpy B time: ', t1 - t0
              t0 = t1
           end if
           call matrix_sum(one, mat_M3(ss), -one, matC(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'M3 axpy C time: ', t1 - t0
              t0 = t1
           end if
        end if
        if (dophi) then
-          if (iprint_mat > 3) t0 = mtime()
+          if (iprint_mat > 4) t0 = mtime()
           call matrix_sum(zero, mat_phi(ss), one, matSLS(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'SLS prune time: ', t1 - t0
              t0 = t1
@@ -1758,14 +1762,14 @@ contains
           electrons_1 = matrix_product_trace(matL(ss), mat_phi(ss))
           electrons_2 = matrix_product_trace(matL(ss), matSLSLS(ss))
           electrons(ss) = three * electrons_1 - two * electrons_2
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) &
                   write (io_lun, *) 'electrons dot time: ', t1 - t0
              t0 = t1
           end if
           call matrix_sum(six, mat_phi(ss), -six, matSLSLS(ss))
-          if (iprint_mat > 3) then
+          if (iprint_mat > 4) then
              t1 = mtime()
              if (inode == ionode) write (io_lun, *) 'phi time: ', t1 - t0
              t0 = t1
@@ -1774,7 +1778,7 @@ contains
        
        ! free temporary matrices
        call my_barrier
-       if (iprint_mat > 3) t0 = mtime()
+       if (iprint_mat > 4) t0 = mtime()
        if (doK .or. doE .or. doM4) then
           call free_temp_matrix(matLSLSL(ss))
           call free_temp_matrix(matLSL(ss))
@@ -1801,7 +1805,7 @@ contains
           call free_temp_matrix(matHL(ss))
           call free_temp_matrix(matLH(ss))
        end if
-       if (iprint_mat > 3) then
+       if (iprint_mat > 4) then
           t1 = mtime()
           if (inode == ionode) write (io_lun, *) 'dealloc time: ', t1 - t0
        end if
@@ -2036,6 +2040,8 @@ contains
   !!    Associating NA-projector matrices
   !!   2018/11/13 17:30 nakata
   !!    Changed matS, matT, matTtran, matKE, matNL and matNA to be spin_SF dependent
+  !!   2024/09/11 14:00 lionel
+  !!    set trans_index(matX(spin)  ) = S_trans
   !!  SOURCE
   !!
   subroutine associate_matrices
@@ -2412,7 +2418,7 @@ contains
     end do
     if(iprint_mat > 3 .AND. inode == ionode) then
        do stat=1,current_matrix
-          write (io_lun,fmt='(2x,"Proc: ",i5," Matrix no., length: ",i24)')&
+          write (io_lun,fmt='(8x,"Proc: ",i5," Matrix no., length: ",i24)')&
                 stat, mat_p(stat)%length
        end do
     end if
@@ -2437,7 +2443,7 @@ contains
        trans_index(matUT(spin) ) = AP_trans
        trans_index(matLS(spin) ) = LS_trans
        trans_index(matSL(spin) ) = LS_trans
-       trans_index(matX(spin)  ) = 0 ! S_trans
+       trans_index(matX(spin)  ) = S_trans
        trans_index(matSX(spin) ) = 0
     end do
     if (atomf.ne.sf) then
@@ -2699,7 +2705,6 @@ contains
        if (matrix_index(B) < 1 .or. matrix_index(B) > mx_matrices) &
             call cq_abort("Matrix error in matrix_sum: ", &
                           matrix_index(B), B)
-       call scal(mat_p(A)%length, alpha, mat_p(A)%matrix, 1)
        call matrix_add(alpha, mat_p(A)%matrix, mat_p(A)%length,       &
                        mat(:,matrix_index(A)), beta, mat_p(B)%matrix, &
                        mat_p(B)%length, mat(:,matrix_index(B)),       &
@@ -2761,6 +2766,8 @@ contains
   !!    Changed MPI_allreduce to gsum
   !!   2008/05/22 ast
   !!    Added timers
+  !!   2024/05/27 nakata
+  !!    bugfix: corrected sf to sf1 for loc to check overflow
   !!  SOURCE
   !!
   real(double) function matrix_trace(A)
@@ -2788,7 +2795,7 @@ contains
           do i = 1, bundle%nm_nodgroup(np) ! Loop over atoms in partition
              iprim = iprim + 1
              sf1 = mat(np,Ah)%ndimi(i)
-             loc = (sf - 1) * sf1 + sf - 1 + mat(np,Ah)%onsite(i)
+             loc = (sf1 - 1) * sf1 + sf1 - 1 + mat(np,Ah)%onsite(i)
              if (loc > mat_p(A)%length) &
                   call cq_abort("Overflow error in trace: ", &
                                 loc, mat_p(A)%length)
@@ -3279,8 +3286,8 @@ contains
     integer :: stat, i
 
     if (current_matrix == max_matrices) then
-       if(myid==0) write(io_lun,fmt='(2x,"You have exceeded the maximum number of temporary matrices in Conquest.")') 
-       if(myid==0) write(io_lun,fmt='(2x,"Consider increasing the limit on temporary matrices with General.MaxTempMatrices")') 
+       if(myid==0) write(io_lun,fmt='(4x,"You have exceeded the maximum number of temporary matrices in Conquest.")') 
+       if(myid==0) write(io_lun,fmt='(4x,"Consider increasing the limit on temporary matrices with General.MaxTempMatrices")') 
        call cq_abort("Overrun number of matrices ", max_matrices)
     end if
     current_matrix = current_matrix + 1
@@ -3309,7 +3316,7 @@ contains
     end do
     allocate_temp_matrix = current_matrix
     if (iprint_mat > 4 .and. myid == 0) &
-         write(io_lun,*) '(A)Current matrix is: ', &
+         write(io_lun,fmt='(10x,a,2i5)') '(A)Current matrix is: ', &
                          current_matrix, mat_p(current_matrix)%length
     call reg_alloc_mem(area_matrices, mat_p(current_matrix)%length, type_dbl)
 
@@ -3354,7 +3361,7 @@ contains
          call cq_abort("Out-of-order deallocation of matrices ", &
                        A, current_matrix)
     if (iprint_mat > 4 .and. myid == 0) &
-         write (io_lun,*) '(D)Current matrix is: ', &
+         write (io_lun,fmt='(10x,a,2i5)') '(D)Current matrix is: ', &
                           current_matrix, mat_p(current_matrix)%length
     call start_timer(tmr_std_allocation)
     deallocate(mat_p(current_matrix)%matrix, STAT=stat)

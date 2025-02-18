@@ -261,8 +261,8 @@ contains
                                       rcellx, rcelly, rcellz, flag_mix_L_SC_min, &
                                       flag_atomic_stress, non_atomic_stress, &
                                       flag_heat_flux, cell_constraint_flag, &
-                                      atom_coord, species_glob, min_layer
-                                      flag_heat_flux, cell_constraint_flag, min_layer
+                                      atom_coord, species_glob, min_layer, &
+                                      flag_heat_flux, cell_constraint_flag
     use density_module,         only: get_electronic_density, density, &
          build_Becke_weight_forces, &
          flag_surface_dipole_correction, &
@@ -295,8 +295,8 @@ contains
 
     ! Local variables
     integer        :: i, j, ii, stat, max_atom, max_compt, ispin, &
-    real(double), dimension(3) :: dipole_correction_force
                       direction, dir1, dir2, counter
+    real(double), dimension(3) :: dipole_correction_force
     real(double)   :: max_force, volume, scale, g0, scaleC, r_super_norm
     type(cq_timer) :: tmr_l_tmp1
     type(cq_timer) :: backtrace_timer
@@ -673,7 +673,8 @@ contains
                 write(io_lun, 106) trim(prefix),(for_conv * ion_interaction_force(j,i), j = 1, 3)
              end if
              if(flag_surface_dipole_correction) &
-                  write(io_lun, fmt='("Force dipole : ",3f15.10)') (for_conv * dipole_correction_force(j), j = 1, 3)
+                  write(io_lun, fmt='(4x,a,3f15.10)') trim(prefix)//" Force dipole : ", &
+                  (for_conv * dipole_correction_force(j), j = 1, 3)
              if (flag_pcc_global) write(io_lun, 108) trim(prefix),(for_conv *   pcc_force(j,i), j = 1, 3)
              if (flag_dft_d2) write (io_lun, 109) trim(prefix),(for_conv * disp_force(j,i), j = 1, 3)
              if (flag_perform_cdft) write (io_lun, fmt='(4x,a,3f15.10)') &

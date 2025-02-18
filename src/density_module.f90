@@ -105,6 +105,10 @@ module density_module
   real(double), allocatable, dimension(:,:) :: bwgrid
   ! total atomcharge, second dim is spin
   real(double), allocatable, dimension(:,:) :: atomcharge
+  ! Used to calculate average potential in one direction (surface dipole)
+  real(double), dimension(:), allocatable :: density_average ! Average density in x/y/z
+  real(double), dimension(:), allocatable :: planar_average
+  integer :: n_grid_norm ! Size of arrays
 
   logical :: weights_set = .false.
   real(double), dimension(95) :: atrad
@@ -132,7 +136,11 @@ module density_module
   logical :: flag_DumpChargeDensity
 
   ! Surface dipole correction
-  logical :: flag_surface_dipole_correction, flag_output_average_potential
+  logical :: flag_surface_dipole_correction
+  ! Write out average potential (with or without correction)
+  logical :: flag_output_average_potential
+  ! True selects Bengtsson (internal potential)
+  logical :: flag_dipole_internal
   integer :: surface_normal                 ! x=1, y=2, z=3 to select arrays
   integer :: discontinuity_location         ! User parameter
   real(double) :: surface_dipole_density, sdde         ! \int a rho_av(a) da
@@ -928,7 +936,7 @@ contains
          r_super_x, r_super_y, r_super_z, x_grid, y_grid, z_grid
     use block_module,                only: n_pts_in_block, in_block_x,in_block_y,in_block_z
     use primary_module,              only: domain
-    use GenComms,                    only: gsum, inode, ionode
+    use GenComms,                    only: gsum, inode, ionode, cq_warn
     use pseudopotential_common,      only: pseudopotential
     use grid_index,                  only: grid_point_x, grid_point_y, grid_point_z
     use species_module,              only: species, charge
@@ -942,13 +950,11 @@ contains
 
     ! Local variables
     integer :: m, n, nb, point, ptx, pty, ptz, min_dens_loc, zero_start, zero_end
-    integer :: n_grid_norm, n_grid_plane, atom, gridpos, lun
+    integer :: n_grid_plane, atom, gridpos, lun
     integer, dimension(:), pointer :: grid_point_norm
     real(double) :: r_super_norm, r_super_area, grid_spacing_norm
     real(double) :: min_dens, beta, shift, locpot
     real(double), dimension(:), pointer :: atom_cell_norm
-    real(double), dimension(:), allocatable :: density_average ! Average density in x/y/z
-    real(double), dimension(:), allocatable :: planar_average
 
     ! Set up appropriate parameters in direction of surface normal
     select case(surface_normal)
@@ -979,8 +985,10 @@ contains
     end select
     ! Calculate average density along surface normal
     ! Note that we find the density by summing over all processes (below)
-    allocate(density_average(n_grid_norm))
+    if(.not.allocated(density_average)) allocate(density_average(n_grid_norm))
+    if(.not.allocated(planar_average)) allocate(planar_average(n_grid_norm))
     density_average = zero
+    planar_average = zero
     ! Sum over grid
     m = 0
     do nb = 1, domain%groups_on_node
@@ -1015,7 +1023,7 @@ contains
        min_dens_loc = discontinuity_location
        min_dens = abs(density_average(min_dens_loc))
        if(min_dens>1e-5 .and. inode==ionode) &
-            write(io_lun,fmt='(8x,"Warning! Possibly large density at discontinuity point: ",f12.5)') min_dens
+            call cq_warn("get_surface_dipole","Possibly large density at discontinuity point: ",min_dens)
     end if
     ! Store location of dipole correction
     dipole_correction_location = real(min_dens_loc-1,double)*grid_spacing_norm
@@ -1046,8 +1054,6 @@ contains
     ! Energy correction
     surface_dipole_energy_elec = zero
     surface_dipole_energy_ion  = zero
-    allocate(planar_average(n_grid_norm))
-    planar_average = zero
     ! Apply the correction
     m = 0
     do nb = 1, domain%groups_on_node
@@ -1088,7 +1094,84 @@ contains
          surface_dipole_energy_elec, surface_dipole_energy_ion
     call gsum(planar_average,n_grid_norm)
     planar_average = planar_average/real(n_grid_plane,double)
-    if(flag_output_average_potential.and.(inode==ionode)) then
+    return
+  end subroutine get_surface_dipole
+  !!***
+
+  subroutine get_average_potential(h_potential, rho_tot, size)
+
+    use numbers
+    use block_module,                only: n_pts_in_block, in_block_x,in_block_y,in_block_z
+    use primary_module,              only: domain
+    use GenComms,                    only: gsum
+    use pseudopotential_common,      only: pseudopotential
+    use grid_index,                  only: grid_point_x, grid_point_y, grid_point_z
+    use dimens,                      only: n_grid_x, n_grid_y, n_grid_z
+
+    implicit none
+
+    ! Passed variables
+    integer :: size
+    real(double), dimension(size) :: h_potential, rho_tot
+
+    ! Local variables
+    integer :: lun, n_grid_plane, gridpos
+    integer :: m, n, nb, point, ptx, pty, ptz
+    integer, dimension(:), pointer :: grid_point_norm
+
+    select case(surface_normal)
+    case(1) ! X
+       n_grid_norm  = n_grid_x
+       n_grid_plane = n_grid_y * n_grid_z
+       grid_point_norm => grid_point_x
+    case(2) ! Y
+       n_grid_norm = n_grid_y
+       n_grid_plane = n_grid_x * n_grid_z
+       grid_point_norm => grid_point_y
+    case(3) ! Z
+       n_grid_norm = n_grid_z
+       n_grid_plane = n_grid_y * n_grid_x
+       grid_point_norm => grid_point_z
+    end select
+    if(.not.allocated(density_average)) allocate(density_average(n_grid_norm))
+    if(.not.allocated(planar_average)) allocate(planar_average(n_grid_norm))
+    density_average = zero
+    planar_average = zero
+    m = 0
+    do nb = 1, domain%groups_on_node
+       point = 0
+       do ptz = 1, in_block_z
+          do pty = 1, in_block_y
+             do ptx = 1, in_block_x
+                point = point+1
+                gridpos = grid_point_norm(m+point)
+                planar_average(gridpos) = planar_average(gridpos) + &
+                     pseudopotential(m+point) + h_potential(m+point)
+                density_average(gridpos) = &
+                     density_average(gridpos) + rho_tot(m+point)
+             end do
+          end do
+       end do
+       m = m + n_pts_in_block
+    end do
+    call gsum(planar_average,n_grid_norm)
+    planar_average = planar_average/real(n_grid_plane,double)
+    call gsum(density_average,n_grid_norm)
+    density_average = density_average/real(n_grid_plane,double)
+    return
+  end subroutine get_average_potential
+
+  subroutine write_average_potential
+
+    use GenComms,                    only: inode, ionode
+    use io_module,                   only: io_assign, io_close
+
+    implicit none
+
+    ! Local variables
+    integer :: lun, n
+
+    if((inode==ionode)) then
        call io_assign(lun)
        open(lun,file="AveragedPotential.dat")
        do n=1,n_grid_norm
@@ -1099,8 +1182,7 @@ contains
     deallocate(planar_average)
     deallocate(density_average)
     return
-  end subroutine get_surface_dipole
-  !!***
+  end subroutine write_average_potential
 
   ! -----------------------------------------------------------
   ! Subroutine get_band_density

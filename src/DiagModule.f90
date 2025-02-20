@@ -514,7 +514,6 @@ contains
     use functions_on_grid,           only: atomfns, &
          allocate_temp_fn_on_grid,    &
          free_temp_fn_on_grid
-    use density_module, ONLY: get_band_density
     use io_module, ONLY: write_eigenvalues, write_eigenvalues_format_ase
     use pao_format, ONLY: pao
     use ELPA_module, ONLY: flag_use_elpa, init_ELPA, end_ELPA

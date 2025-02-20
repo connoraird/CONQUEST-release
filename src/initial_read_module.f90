@@ -1692,7 +1692,9 @@ contains
     ! Surface dipole correction parameters
     flag_surface_dipole_correction = fdf_boolean('SC.SurfaceDipoleCorrection',.false.)
     flag_output_average_potential  = fdf_boolean('SC.OutputAveragePotential',.false.)
-    if(flag_surface_dipole_correction) discontinuity_location = fdf_integer('SC.DiscontinuityLocation',0)
+    if(flag_surface_dipole_correction) discontinuity_location = fdf_double('SC.DiscontinuityLocation',-one)
+    if(discontinuity_location>one) call cq_abort("Discontinuity location must be fractional: ",&
+         discontinuity_location)
     tmp = fdf_string(1,'SC.SurfaceNormal','z')
     if(leqi(tmp,'x')) then
        surface_normal = 1
@@ -2964,11 +2966,11 @@ contains
     end if
     if(flag_surface_dipole_correction) then
        write(io_lun,fmt='(/10x,"Applying surface dipole correction along axis ",i2)') surface_normal
-       if(discontinuity_location==0) then
+       if(discontinuity_location<zero) then
           write(io_lun,fmt='(10x,"No location for discontinuity specified! &
                &It will be placed at point of lowest density")')
        else
-          write(io_lun,fmt='(10x,"User-specified location for discontinuity: ",i5)') &
+          write(io_lun,fmt='(10x,"User-specified location for discontinuity: ",f12.5)') &
                discontinuity_location
        end if
     end if

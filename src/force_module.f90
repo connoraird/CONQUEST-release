@@ -986,6 +986,8 @@ contains
   !!    Added calculations for off-diagonal elements of PP_stress and SP_stress
   !!   2019/05/08 zamaan
   !!    Added atomic stress contributions
+  !!   2025/03/20 16:07 dave
+  !!    Added electron number gradient contribution to S-Pulay force and stress
   !!  SOURCE
   !!
   subroutine pulay_force(p_force, KE_force, fixed_potential, vary_mu,  &
@@ -999,7 +1001,7 @@ contains
     use matrix_module,               only: matrix, matrix_halo
     use matrix_data,                 only: mat, halo, blip_trans, Srange, aSa_range
     use mult_module,                 only: LNV_matrix_multiply,      &
-                                           matM12,                   &
+                                           matM12, matM4,            &
                                            allocate_temp_matrix,     &
                                            free_temp_matrix,         &
                                            return_matrix_value,      &
@@ -1007,7 +1009,7 @@ contains
                                            scale_matrix_value,       &
                                            matKatomf,                &
                                            return_matrix_block_pos,  &
-                                           matrix_scale,             &
+                                           matrix_scale, matrix_sum, &
                                            SF_to_AtomF_transform
     use global_module,               only: iprint_MD, WhichPulay,    &
                                            BothPulay, PhiPulay,      &
@@ -1019,7 +1021,7 @@ contains
                                            id_glob, species_glob,    &
                                            flag_diagonalisation,     &
                                            flag_full_stress, flag_stress, &
-                                           flag_atomic_stress, min_layer
+                                           flag_atomic_stress, min_layer, mu_DMM
     use set_bucket_module,           only: rem_bucket, atomf_atomf_rem
     use blip_grid_transform_module,  only: blip_to_support_new,      &
                                            blip_to_grad_new
@@ -1162,8 +1164,12 @@ contains
     ! If we're diagonalising, we've already build data_M12
     if (.not. flag_diagonalisation) then
        call LNV_matrix_multiply(electrons, energy_tmp, dontK, doM1,   &
-                                doM2, dontM3, dontM4, dontphi, dontE, &
-                                mat_M12=matM12)
+                                doM2, dontM3, doM4, dontphi, dontE, &
+                                mat_M12=matM12, mat_M4=matM4)
+       ! Electron number gradient contribution to S-Pulay force and stress
+       do spin=1,nspin
+          call matrix_sum(one,matM12(spin),-half*mu_DMM(spin),matM4(spin))
+       end do
     end if
     t1 = mtime()
     t0 = t1

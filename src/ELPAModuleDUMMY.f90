@@ -14,7 +14,7 @@ module ELPA_module
   integer :: merow, mecol
 
   private
-  public :: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy
+  public :: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy, flag_elpa_GPU
   public :: init_ELPA, end_ELPA, ELPA_zhegv
 
 contains

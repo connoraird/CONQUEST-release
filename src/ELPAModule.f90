@@ -121,6 +121,7 @@ contains
     if(flag_elpa_GPU) then
        call elp%set("nvidia-gpu",1,info)
        call elp%set("solver",ELPA_SOLVER_1STAGE,info)
+       info = elp%setup_gpu()
     else
        info = elp%setup()
     end if

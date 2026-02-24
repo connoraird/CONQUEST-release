@@ -3103,7 +3103,8 @@ contains
          type_dbl
     use species_module,  only: nsf_species
     use units, only: en_conv, en_units, energy_units
-    use ELPA_module, only: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy
+    use ELPA_module, only: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy, &
+         flag_elpa_GPU
 
     implicit none
 
@@ -3275,6 +3276,7 @@ contains
        else
           call cq_abort("Invalid Diag.ELPASolver " // elpa_solver )
        endif
+       flag_elpa_GPU = fdf_boolean('Diag.ELPA_GPU',.false.)
     else
        elpa_solver = "NONE"
        elpa_kernel = "NONE"

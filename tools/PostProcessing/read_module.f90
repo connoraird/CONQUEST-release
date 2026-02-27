@@ -118,15 +118,12 @@ contains
        i_job = 2
     else if(leqi(job,'ban')) then
        i_job = 3
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
     else if(leqi(job,'ter').or.leqi(job,'th')) then
        i_job = 4
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
        ! Allow user to specify output filename
        root_file = fdf_string(50,'Process.RootFile','STM')
     else if(leqi(job,'stm')) then
        i_job = 5
-       if(flag_Multisite) call cq_abort("Not yet compatible with multi-site support functions")
        ! Allow user to specify output filename
        root_file = fdf_string(50,'Process.RootFile','STM')
     else if(leqi(job,'dos')) then
@@ -235,23 +232,25 @@ contains
        E_procwf_max = fdf_double('Process.max_wf_E',E_wf_max)
        ! Is the range relative to Ef (T) or absolute (F)
        flag_procwf_range_Ef = fdf_boolean('Process.WFRangeRelative',.true.)
-       if(abs(E_procwf_max-E_procwf_min)>1e-8_double) then
-          flag_proc_range = .true.
-       else
-          n_bands_process = fdf_integer('Process.noWF',0)
-          if(n_bands_process>0) then
-             allocate(band_proc_no(n_bands_process))
-             if (fdf_block('WaveFunctionsProcess')) then
-                if(1+block_end-block_start<n_bands_process) then
-                   write(*,*) "Too few wf no in WaveFunctionsOut: ",1+block_end-block_start,n_bands_process
-                   stop
-                end if
-                do i=1,n_bands_process
-                   read(unit=input_array(block_start+i-1),fmt=*) band_proc_no(i)
-                end do
-                call fdf_endblock
+       n_bands_process = fdf_integer('Process.noWF',0)
+       if(n_bands_process>0) then
+          allocate(band_proc_no(n_bands_process))
+          if (fdf_block('WaveFunctionsProcess')) then
+             if(1+block_end-block_start<n_bands_process) then
+                write(*,*) "Too few wf no in WaveFunctionsOut: ",1+block_end-block_start,n_bands_process
+                stop
              end if
-             flag_proc_range = .false.
+             do i=1,n_bands_process
+                read(unit=input_array(block_start+i-1),fmt=*) band_proc_no(i)
+             end do
+             call fdf_endblock
+          end if
+          flag_proc_range = .false.
+       else
+          if(abs(E_procwf_max-E_procwf_min)>1e-8_double) then
+             flag_proc_range = .true.
+          else
+             call cq_abort("Need either a range or a number of bands")
           end if
        end if
     end if ! i_job == 3 or 4 or 5
@@ -273,7 +272,7 @@ contains
     ! Add flag for window relative to Fermi level
     E_DOS_min = fdf_double('Process.min_DOS_E',E_wf_min)
     E_DOS_max = fdf_double('Process.max_DOS_E',E_wf_max)
-    sigma_DOS = fdf_double('Process.sigma_DOS',zero) ! Adjust to minimum of 4*energy spacing
+    sigma_DOS = fdf_double('Process.sigma_DOS',0.001_double) ! Better than adaptive
     n_DOS = fdf_integer('Process.n_DOS',1001)
     flag_total_iDOS = fdf_boolean('Process.TotalIntegratedDOS',.false.)
     if(i_job==7) then
@@ -349,6 +348,7 @@ contains
   subroutine read_block_input
 
     use datatypes
+    use numbers, ONLY: very_small
     use local, ONLY: nblockx, nblocky, nblockz, block_store, nprocs, block_size_x, block_size_y, block_size_z, &
          grid_x, grid_y, grid_z, nptsx, nptsy, nptsz, stm_z_min, stm_z_max, stm_x_min, stm_x_max, &
          stm_y_min, stm_y_max, nxmin, nymin, nzmin, gpv
@@ -380,13 +380,13 @@ contains
     ! Cell volume
     volume = BohrToAng*BohrToAng*BohrToAng*r_super_x*r_super_y*r_super_z
     ! Number of points in the area that the user has specified
-    nptsx = floor(BohrToAng*(stm_x_max - stm_x_min)/grid_x)
-    nptsy = floor(BohrToAng*(stm_y_max - stm_y_min)/grid_y)
-    nptsz = floor(BohrToAng*(stm_z_max - stm_z_min)/grid_z)
+    nptsx = floor(BohrToAng*(stm_x_max - stm_x_min)/grid_x+very_small)
+    nptsy = floor(BohrToAng*(stm_y_max - stm_y_min)/grid_y+very_small)
+    nptsz = floor(BohrToAng*(stm_z_max - stm_z_min)/grid_z+very_small)
     write(*,fmt='(4x,"Points in user-specified area: ",3i5)') nptsx,nptsy,nptsz
     gpv = volume/real(nptsx*nptsy*nptsz,double)
     ! Work out starting grid points in user area
-    nxmin = floor(BohrToAng*stm_x_min/grid_x)
+    nxmin = floor(BohrToAng*stm_x_min/grid_x)  ! + very_small? (2025.Jan.8 TM)
     if(stm_x_min - grid_x*real(nxmin,double)>1e-3) nxmin = nxmin + 1
     nymin = floor(BohrToAng*stm_y_min/grid_y)
     if(stm_y_min - grid_y*real(nymin,double)>1e-3) nymin = nymin + 1
@@ -478,7 +478,7 @@ contains
        write(*,fmt='(4x,"Fermi level: ",f12.5," Ha   (=",f10.3," eV)")') efermi(1), efermi(1)*HaToeV
     else
        read(17,fmt='(a6,2f18.10)') str,efermi(1), efermi(2)
-       write(*,fmt='(4x,"Fermi levels: ",2f12.5," Ha   (=",2f10.3" eV)")') efermi, efermi*HaToeV
+       write(*,fmt='(4x,"Fermi levels: ",2f12.5," Ha   (=",2f10.3," eV)")') efermi, efermi*HaToeV
     end if
     read(17,*) str
     ! Allocate memory

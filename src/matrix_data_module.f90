@@ -62,6 +62,9 @@
 !!    which are no longer used
 !!   2017/12/05 10:20 dave (with TM and NW (Mizuho))
 !!    Adding new matrix indices (aNA and NAa) for atom function - NA projectors
+!!   2025/02/06 14:30 nakata
+!!    aSs_in_sSs_range and aSs_in_sSs_matind were added
+!!    and mx_matrices was changed from 32 to 33 for pDOS with MSSFs
 !!  SOURCE
 !!
 module matrix_data
@@ -73,7 +76,7 @@ module matrix_data
   save
 
   ! This will need to change if the above parameters are changed
-  integer, parameter :: mx_matrices = 32
+  integer, parameter :: mx_matrices = 33
 
   ! Store ALL indices in a large array
   type(matrix),      allocatable, dimension(:,:), target :: mat
@@ -86,7 +89,8 @@ module matrix_data
        SLSmatind, Tmatind, TTrmatind, TSmatind, THmatind, TLmatind, Xmatind, SXmatind
   integer, dimension(:), pointer :: aSa_matind, aHa_matind, STr_matind, HTr_matind, &
                                     aSs_matind, aHs_matind, sSa_matind, sHa_matind, &
-                                    SFcoeff_matind, SFcoeffTr_matind, LD_matind
+                                    SFcoeff_matind, SFcoeffTr_matind, LD_matind, &
+                                    aSs_in_sSs_matind
   integer, dimension(:), pointer :: aNAmatind, NAamatind
 
   ! Parameters for the different matrix ranges
@@ -126,6 +130,7 @@ module matrix_data
   ! Ranges for NA projectors set later also (dimens.module.f90)
   integer :: aNArange        ! 31
   integer :: NAarange        ! 32
+  integer :: aSs_in_sSs_range   ! 33 for S(atomf,sf) but with the range of Srange (= r_sf + r_sf, not r_atomf + r_sf)
 
   integer :: max_range ! Indexes matrix with largest range
 

@@ -801,12 +801,16 @@ contains
   !!     EXX: added filtering option for EXX and cleaning
   !!   2020/01/14 lionel
   !!     EXX: added GTO option
+  !!   2022/05/19 11:54 dave
+  !!     Add input parameters for surface dipole correction
   !!   2022/10/28 15:56 lionel
   !!     Added ASE output file setup ; default is F
   !!   2022/12/14 10:01 dave and tsuyoshi
   !!     Update test for solution method (diagon vs ordern) following issue #47
   !!   2024/12/03 lionel
   !!     Added grid specification of EXX coarse/standard/fine
+  !!   2025/02/03 nakata
+  !!     Set flag_out_wf = .true. expricitly when flag_write_projected_DOS is .true.
   !!  TODO
   !!  SOURCE
   !!
@@ -899,6 +903,8 @@ contains
          atomch_output, flag_Kerker, flag_wdmetric, minitersSC, &
          flag_newresidual, flag_newresid_abs, n_dumpSCF
     use density_module, only: flag_InitialAtomicSpin, flag_DumpChargeDensity
+    use density_module, only: flag_surface_dipole_correction, surface_normal, &
+         flag_output_average_potential, discontinuity_location, flag_dipole_internal
     use S_matrix_module, only: InvSTolerance, InvSMaxSteps,&
          InvSDeltaOmegaTolerance
     use blip,          only: blip_info, init_blip_flag, alpha, beta
@@ -1632,10 +1638,10 @@ contains
     optcell_method        = fdf_integer('AtomMove.OptCellMethod', 1)
     cell_constraint_flag  = fdf_string(20,'AtomMove.OptCell.Constraint','none')
     ! Warn user if applying constraints with OptCellMethod 3
-    if(optcell_method==3.and.(.not.leqi(cell_constraint_flag,'none'))) then
-       call cq_warn(sub_name,"Cell constraints NOT applied for OptCellMethod 3")
-       cell_constraint_flag = 'none'
-    end if
+    !if(optcell_method==3.and.(.not.leqi(cell_constraint_flag,'none'))) then
+    !   call cq_warn(sub_name,"Cell constraints NOT applied for OptCellMethod 3")
+    !   cell_constraint_flag = 'none'
+    !end if
     cell_en_tol           = fdf_double('AtomMove.OptCell.EnTol',0.00001_double)
     ! It makes sense to use GPa here so I'm changing the default to 0.1GPa
     cell_stress_tol       = fdf_double('AtomMove.StressTolerance',0.1_double) !005_double)
@@ -1685,6 +1691,25 @@ contains
     ! number of electrons. If the error of electron number (per total electron number) 
     ! is larger than the following value, we use atomic charge density. (in update_H)
     threshold_resetCD     = fdf_double('SC.Threshold.Reset',0.1_double)
+    ! Surface dipole correction parameters
+    flag_surface_dipole_correction = fdf_boolean('SC.SurfaceDipoleCorrection',.false.)
+    flag_output_average_potential  = fdf_boolean('SC.OutputAveragePotential',.false.)
+    if(flag_surface_dipole_correction) discontinuity_location = fdf_double('SC.DiscontinuityLocation',-one)
+    if(discontinuity_location>one) call cq_abort("Discontinuity location must be fractional: ",&
+         discontinuity_location)
+    tmp = fdf_string(1,'SC.SurfaceNormal','z')
+    if(leqi(tmp,'x')) then
+       surface_normal = 1
+    else if(leqi(tmp,'y')) then
+       surface_normal = 2
+    else if(leqi(tmp,'z')) then
+       surface_normal = 3
+    else
+       call cq_abort('Unrecognised surface normal direction specified: '//tmp)
+    end if
+    ! Bengtsson PRB 59 12301 1999 is default
+    flag_dipole_internal = fdf_boolean('SC.SurfaceDipoleInternal',.true.)
+    ! Line minimisation
     tmp = fdf_string(4,'AtomMove.CGLineMin','safe')
     if(leqi(tmp,'safe')) then
        cg_line_min = safe
@@ -1765,6 +1790,7 @@ contains
        if(flag_diagonalisation) then
           flag_write_projected_DOS = fdf_boolean('IO.write_proj_DOS',.false.)
           if(flag_write_projected_DOS) then
+             flag_out_wf = .true.
              E_wf_min = fdf_double('IO.min_wf_E',-BIG)
              E_wf_max = fdf_double('IO.max_wf_E',BIG)
           end if
@@ -2743,6 +2769,8 @@ contains
          n_support_iterations,              &
          n_L_iterations
     use datestamp,            only: datestr, commentver
+    use density_module,       only: flag_surface_dipole_correction, surface_normal, &
+         discontinuity_location
     use pseudopotential_common, only: flag_neutral_atom_projector, maxL_neutral_atom_projector, &
          numN_neutral_atom_projector, pseudo_type, OLDPS, SIESTA, ABINIT
     use input_module,         only: leqi, chrcap
@@ -2939,7 +2967,16 @@ contains
                maxval(numN_neutral_atom_projector),maxL_neutral_atom_projector
        end if
     end if
-
+    if(flag_surface_dipole_correction) then
+       write(io_lun,fmt='(/10x,"Applying surface dipole correction along axis ",i2)') surface_normal
+       if(discontinuity_location<zero) then
+          write(io_lun,fmt='(10x,"No location for discontinuity specified! &
+               &It will be placed at point of lowest density")')
+       else
+          write(io_lun,fmt='(10x,"User-specified location for discontinuity: ",f12.5)') &
+               discontinuity_location
+       end if
+    end if
     if (.not.vary_mu) then
        write(io_lun,*) '          mu is constant'
        write(io_lun,fmt="(/10x,'The Chemical Potential mu is :',f7.4)") mu
@@ -3041,6 +3078,8 @@ contains
   !!    Moved printing to capture default gamma point behaviour
   !!   2023/07/20 12:00 tsuyoshi
   !!    Implementing 1st version of Padding H and S matrices
+  !!   2026/02/04 12:10 dave
+  !!    Tweak k-point output
   !!  SOURCE
   !!
   subroutine readDiagInfo
@@ -3064,6 +3103,8 @@ contains
          type_dbl
     use species_module,  only: nsf_species
     use units, only: en_conv, en_units, energy_units
+    use ELPA_module, only: flag_use_elpa, elpa_solver, elpa_kernel, elpa_API, flag_elpa_dummy, &
+         flag_elpa_GPU
 
     implicit none
 
@@ -3212,6 +3253,35 @@ contains
        write(io_lun,2) block_size_r, block_size_c
        write(io_lun,3) proc_rows, proc_cols
     end if
+ 
+    !Using ELPA or not
+    flag_use_elpa = fdf_boolean('Diag.UseELPA',.false.)
+
+    if( flag_use_elpa ) then
+       if(flag_elpa_dummy) call cq_abort("Code compiled without ELPA! Set Diag.UseELPA F")
+       elpa_API = fdf_integer('Diag.ELPA_API',20181113)
+       elpa_solver = fdf_string(16,'Diag.ELPASolver','ELPA1')
+       if(leqi(elpa_solver,'ELPA1')) then
+          elpa_kernel = "NONE"
+       else if(leqi(elpa_solver,'ELPA2')) then
+          elpa_kernel = fdf_string(16,'Diag.ELPA2Kernel','GENERIC')
+          ! Check for a valid kernel
+          if(.not.(leqi(elpa_kernel,'GENERIC').OR.leqi(elpa_kernel,"GENERIC_SIMPLE") &
+               .OR.leqi(elpa_kernel,"SSE_ASSEMBLY").OR.leqi(elpa_kernel,"SSE_BLOCK1") &
+               .OR.leqi(elpa_kernel,"SSE_BLOCK2").OR.leqi(elpa_kernel,"AVX_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX_BLOCK2").OR.leqi(elpa_kernel,"AVX2_BLOCK1") &
+               .OR.leqi(elpa_kernel,"AVX2_BLOCK2"))) then
+             call cq_abort("Invalid Diag.ELPA2Kernel " // elpa_kernel )
+          endif
+       else
+          call cq_abort("Invalid Diag.ELPASolver " // elpa_solver )
+       endif
+       flag_elpa_GPU = fdf_boolean('Diag.ELPA_GPU',.false.)
+    else
+       elpa_solver = "NONE"
+       elpa_kernel = "NONE"
+    end if
+
     ! Read k-point mesh type
     mp_mesh = fdf_boolean('Diag.MPMesh',.false.)
     if(.NOT.mp_mesh) then
@@ -3438,7 +3508,7 @@ contains
           end do
        end do
        ! Write out fractional k-points
-       if(iprint_init>1.AND.inode==ionode) then
+       if((iprint_init>2.or.(iprint_init>1.AND.nkp_tmp<20)).AND.inode==ionode) then
           write(io_lun,7) nkp_tmp
           do i=1,nkp_tmp
              write(io_lun,fmt='(8x,i5,3f15.6,f12.3)')&
@@ -3494,7 +3564,7 @@ contains
        deallocate(kk_tmp,wtk_tmp,STAT=stat)
        if(stat/=0) &
             call cq_abort('FindEvals: couldnt deallocate kpoints', nkp_tmp)
-       if(iprint_init>1.AND.inode==ionode) then
+       if((iprint_init>2.or.(iprint_init>1.AND.nkp_tmp<20)).AND.inode==ionode) then
           !
           write(io_lun,*)
           write(io_lun,10) nkp
@@ -3502,6 +3572,8 @@ contains
              write (io_lun,fmt='(8x,i5,3f15.6,f12.3)') &
                   i,kk(1,i),kk(2,i),kk(3,i),wtk(i)
           end do
+       else if(iprint_init>1.AND.inode==ionode) then
+          write(io_lun,fmt='(8x,i4,a)') nkp, ' symmetry inequivalent Kpoints'
        end if
        
        do i = 1, nkp

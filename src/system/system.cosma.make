@@ -15,7 +15,7 @@ ARFLAGS=
 
 # Compilation flags
 # NB for gcc10 you need to add -fallow-argument-mismatch
-COMPFLAGS= -g -fopenmp -O3 $(XC_COMPFLAGS)  -I${MKLROOT}/include/intel64/lp64 -I"${MKLROOT}/include" -fno-omit-frame-pointer -xHost
+COMPFLAGS= -g -fopenmp -O3 $(XC_COMPFLAGS) $(ELPA_INC) -I${MKLROOT}/include/intel64/lp64 -I"${MKLROOT}/include" -fno-omit-frame-pointer -xHost
 COMPFLAGS_F77= $(COMPFLAGS)
 
 # LibXC compatibility (LibXC below) or Conquest XC library
@@ -29,12 +29,19 @@ XC_COMPFLAGS =
 FFT_LIB=-lmkl_rt
 FFT_OBJ=fft_fftw3.o
 
+# Set ELPA library
+#ELPA_LIB = -L/**/lib -lelpa
+#ELPA_INC = -I/**/modules/
+ELPA_LIB =
+ELPA_INC =
+
 # Full library call; remove scalapack if using dummy diag module
-LIBS= $(FFT_LIB) $(XC_LIB)
+LIBS= $(FFT_LIB) $(ELPA_LIB) $(XC_LIB)
 
 # Matrix multiplication kernel type
 MULT_KERN = default
 # Use dummy DiagModule or not
 DIAG_DUMMY =
 
-
+# Use dummy ELPAModule or not
+ELPA_DUMMY =DUMMY

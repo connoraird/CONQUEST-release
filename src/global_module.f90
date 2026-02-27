@@ -424,5 +424,7 @@ module global_module
   integer :: i_pol_dir_st, i_pol_dir_end ! Either 1,1 or 1,3
   integer, dimension(3) :: i_pol_dir ! Either n,0,0 or 1,2,3
 
+  ! Density matrix Lagrange multiplier for correct electron number (needed for forces and stress)
+  real(double), dimension(2) :: mu_DMM ! Allow for spin
 end module global_module
 !!***

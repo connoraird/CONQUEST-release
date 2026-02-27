@@ -33,7 +33,7 @@ module XC
 
   use datatypes
   use global_module, only: area_ops, io_lun, iprint_ops, spin_factor
-  use xc_f90_lib_m
+  use xc_f03_lib_m
 
   implicit none
 
@@ -55,8 +55,8 @@ module XC
   ! LibXC variables
   integer :: n_xc_terms
   integer, dimension(2) :: i_xc_family
-  type(xc_f90_func_t), dimension(:), allocatable :: xc_func
-  type(xc_f90_func_info_t), dimension(:), allocatable :: xc_info
+  type(xc_f03_func_t), dimension(:), allocatable :: xc_func
+  type(xc_f03_func_info_t), dimension(:), allocatable :: xc_info
   logical :: flag_use_libxc
 
   ! Conquest functional identifiers
@@ -113,8 +113,8 @@ contains
     integer :: vmajor, vminor, vmicro, i, j
     integer, dimension(2) :: xcpart
     character(len=120) :: name, kind, family, ref
-    type(xc_f90_func_t) :: temp_xc_func
-    type(xc_f90_func_info_t) :: temp_xc_info
+    type(xc_f03_func_t) :: temp_xc_func
+    type(xc_f03_func_info_t) :: temp_xc_info
 
     ! Test for LibXC or CQ
     if(flag_functional_type<0) then
@@ -123,12 +123,12 @@ contains
        ! LibXC functional specified
        ! --------------------------
        flag_use_libxc = .true.
-       call xc_f90_version(vmajor, vminor, vmicro)
+       call xc_f03_version(vmajor, vminor, vmicro)
        if(inode==ionode.AND.iprint_ops>0) then
           if(vmajor>2) then
-             write(io_lun,'(4x,"LibXC version: ",I2,".",I2,".",I2)') vmajor, vminor, vmicro
+             write(io_lun,'(4x,"Using LibXC version: ",I2,".",I2,".",I2)') vmajor, vminor, vmicro
           else
-             write(io_lun,'(4x,"LibXC version: ",I2,".",I2)') vmajor, vminor
+             write(io_lun,'(4x,"Using LibXC version: ",I2,".",I2)') vmajor, vminor
           end if
        end if
        ! Identify the functional
@@ -141,13 +141,13 @@ contains
           i = floor(-flag_functional_type/1000.0_double)
           ! Temporary init to find exchange or correlation
           if(nspin==1) then
-             call xc_f90_func_init(temp_xc_func, i, XC_UNPOLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_UNPOLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           else if(nspin==2) then
-             call xc_f90_func_init(temp_xc_func, i, XC_POLARIZED)
-             temp_xc_info = xc_f90_func_get_info(temp_xc_func)
+             call xc_f03_func_init(temp_xc_func, i, XC_POLARIZED)
+             temp_xc_info = xc_f03_func_get_info(temp_xc_func)
           end if
-          select case(xc_f90_func_info_get_kind(temp_xc_info))
+          select case(xc_f03_func_info_get_kind(temp_xc_info))
           case(XC_EXCHANGE)
              xcpart(1) = i
              xcpart(2) = -flag_functional_type - xcpart(1)*1000
@@ -155,25 +155,25 @@ contains
              xcpart(2) = i
              xcpart(1) = -flag_functional_type - xcpart(2)*1000
           end select
-          call xc_f90_func_end(temp_xc_func)
+          call xc_f03_func_end(temp_xc_func)
        end if
        ! Now initialise and output
        allocate(xc_func(n_xc_terms),xc_info(n_xc_terms))
        do i=1,n_xc_terms
           if(nspin==1) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_UNPOLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           else if(nspin==2) then
-             call xc_f90_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
-             xc_info(i) = xc_f90_func_get_info(xc_func(i))
+             call xc_f03_func_init(xc_func(i), xcpart(i), XC_POLARIZED)
+             xc_info(i) = xc_f03_func_get_info(xc_func(i))
           end if
           ! Consistent threshold with Conquest
-          if(vmajor>2) call xc_f90_func_set_dens_threshold(xc_func(i),RD_ERR)
-          name = xc_f90_func_info_get_name(xc_info(i))
-          i_xc_family(i) = xc_f90_func_info_get_family(xc_info(i))
+          if(vmajor>2) call xc_f03_func_set_dens_threshold(xc_func(i),RD_ERR)
+          name = xc_f03_func_info_get_name(xc_info(i))
+          i_xc_family(i) = xc_f03_func_info_get_family(xc_info(i))
           if(i_xc_family(i)==XC_FAMILY_GGA) flag_is_GGA = .true.
           if(inode==ionode) then
-             select case(xc_f90_func_info_get_kind(xc_info(i)))
+             select case(xc_f03_func_info_get_kind(xc_info(i)))
              case (XC_EXCHANGE)
                 write(kind, '(a)') 'an exchange functional'
              case (XC_CORRELATION)
@@ -207,10 +207,10 @@ contains
                    &     " family and is defined in the reference(s):")') &
                         trim(name), trim(kind), trim(family)
                    j = 0
-                   ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                   ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    do while(j >= 0)
                       write(io_lun, '(4x,a,i1,2a)') '[', j, '] ', trim(ref)
-                      ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(i),j))
+                      ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(i),j))
                    end do
                 else
                    write(io_lun,'(4x,"The functional ", a, " is ", a, ", and it belongs to the ", a, &
@@ -220,7 +220,7 @@ contains
              else if(iprint_ops>0) then
                 write(io_lun,'(4x,"Using the ",a," functional ",a)') trim(family),trim(name)
              else
-                select case(xc_f90_func_info_get_kind(xc_info(i)))
+                select case(xc_f03_func_info_get_kind(xc_info(i)))
                 case (XC_EXCHANGE)
                    write(io_lun,fmt='(/4x,"Using X functional ",a)') trim(name)
                 case (XC_CORRELATION)
@@ -313,15 +313,18 @@ contains
     implicit none
 
     integer :: i, j
-    character(len=120) :: ref
+    character(len=200) :: ref
 
+    call xc_f03_reference(ref)
+    write(io_lun,fmt='(/4x,"LibXC reference:  ",a)') ref
     write(io_lun,fmt='(4x,"XC references from LibXC:")')
     do j=1,n_xc_terms
        i = 0
-       ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(j),i))
+       ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(j),i))
+       write(io_lun,fmt='(6x,a)') trim(ref)
        do while(i >= 0)
+          ref = xc_f03_func_reference_get_ref(xc_f03_func_info_get_references(xc_info(j),i))
           write(io_lun, '(6x,a)') trim(ref)
-          ref = xc_f90_func_reference_get_ref(xc_f90_func_info_get_references(xc_info(j),i))
        end do
     end do
     return
@@ -700,10 +703,10 @@ contains
        if(nspin>1) then
           select case( i_xc_family(nxc) )
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, eps, vrho )
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, sigma, eps, vrho, vsigma )
           end select
 
@@ -784,10 +787,10 @@ contains
        else ! No spin
           select case (i_xc_family(nxc))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_lda_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens,  eps, vrho )
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
+             call xc_f03_gga_exc_vxc( xc_func(nxc), int(n_my_grid_points,kind=wide), &
                 alt_dens, sigma,  eps, vrho, vsigma )
           end select
 
@@ -1007,7 +1010,7 @@ contains
        if(nspin>1) then ! NB no spin-polarised GGA NSC forces
           select case (i_xc_family(j))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
+             call xc_f03_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
              dxc_potential(1:n_my_grid_points,1,1) = dxc_potential(:n_my_grid_points,1,1) +vrho(1:3*n_my_grid_points-2:3)
              dxc_potential(1:n_my_grid_points,1,2) = dxc_potential(:n_my_grid_points,1,2) +vrho(2:3*n_my_grid_points-1:3)
              dxc_potential(1:n_my_grid_points,2,1) = dxc_potential(:n_my_grid_points,2,1) +vrho(2:3*n_my_grid_points-1:3)
@@ -1016,13 +1019,13 @@ contains
        else
           select case (i_xc_family(j))
           case(XC_FAMILY_LDA)
-             call xc_f90_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
+             call xc_f03_lda_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,vrho)
              dxc_potential(1:n_my_grid_points,1,1) = dxc_potential(1:n_my_grid_points,1,1) + &
                   vrho(1:n_my_grid_points)
           case(XC_FAMILY_GGA)
-             call xc_f90_gga_vxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,vrho,&
+             call xc_f03_gga_vxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,vrho,&
                   vsigma)
-             call xc_f90_gga_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,&
+             call xc_f03_gga_fxc(xc_func(j),int(n_my_grid_points,kind=wide),alt_dens,sigma,&
                   v2rho2,v2rhosigma,v2sigma2)
           end select
 
@@ -1219,9 +1222,9 @@ contains
        eps = zero
        select case( i_xc_family(nxc) )
        case(XC_FAMILY_LDA)
-          call xc_f90_lda_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, eps )
+          call xc_f03_lda_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, eps )
        case(XC_FAMILY_GGA)
-          call xc_f90_gga_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, sigma, eps )
+          call xc_f03_gga_exc( xc_func(nxc), int(n_my_grid_points,kind=wide), alt_dens, sigma, eps )
        end select
        xc_epsilon(1:n_my_grid_points) = xc_epsilon(1:n_my_grid_points) + eps(1:n_my_grid_points)
     end do ! nxc = n_xc_terms

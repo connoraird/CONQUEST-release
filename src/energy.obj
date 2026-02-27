@@ -7,6 +7,7 @@ ENERGY_OBJS = H_matrix_module.o \
               PosTan_module.o \
               DMMinModule.o \
               DiagModule${DIAG_DUMMY}.o \
+              ELPAModule${ELPA_DUMMY}.o \
               ScalapackFormat.o \
               blip_minimisation.module.o \
               blip_gradient.module.o \

@@ -123,6 +123,15 @@ coordinates* (``AtomMove.OptCellMethod 1``) using the following input:
 
 Note that stress is in GPa and enthalpy is in Ha by default.
 
+It is possible to apply constraints to the cell when optimising it, using the
+flag ``AtomMove.OptCell.Constraint``.  The constraint takes three different possible
+forms: fixing one or two of the cell lengths (e.g. ``AtomMove.OptCell.Constraint a`` or
+``AtomMove.OptCell.Constraint a b``); fixing the ratio between two cell lengths
+(e.g. ``AtomMove.OptCell.Constraint c/a``); and varying only the volume but not the
+cell shape (``AtomMove.OptCell.Constraint volume``).  Fixing the ratio between two
+cell lengths does not determine the minimisation fully: we choose to maintain the
+*average* stress in the two directions as well as the ratio.
+
 Go to :ref:`top <strucrelax>`.
 
 .. _sr_both:
@@ -147,7 +156,10 @@ allows *orthorhombic* unit cells). This can be done by setting
    AtomMove.EnthalpyTolerance 1E-5
    AtomMove.StressTolerance 0.1
 
-Note that stress is in GPa and enthalpy is in Ha by default.
+Note that stress is in GPa and enthalpy is in Ha by default.  It is possible
+to apply constraints to the simulation cell as described above, but this will
+require extra care from the user to ensure that the simulation proceeds as
+desired.
 
 The enthalpy will generally converge much more rapidly than the force
 and stress, and that it may be necessary to tighten ``minE.SCTolerance``

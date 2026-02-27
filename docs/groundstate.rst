@@ -185,7 +185,7 @@ for the block size of the matrix, specify the following two variables.
   Diag.BlockSizeC       20
 
 Note that these two numbers should be the same when padding 
-(and when using ELPA which will be introduced to CONQUEST soon).
+(and when using ELPA as described below).
 We suggest that an appropriate value is between 20 and 200, but 
 this should be tested. 
 
@@ -196,6 +196,26 @@ like to remove it, set the following variable.
 
   Diag.PaddingHmatrix              F 
 
+
+Go to :ref:`top <groundstate>`
+
+.. _gs_diag_elpa:
+
+Using ELPA
+~~~~~~~~~~
+
+`ELPA <https://elpa.mpcdf.mpg.de/>`_ is an alternative to ScaLAPACK for
+diagonalisation which can show better parallelisation, and allows use of
+GPU cards for acceleration (though the GPU implementation in CONQUEST is
+at a very early stage).  To enable ELPA and GPUs, set the following tags:
+
+ ::
+
+  Diag.UseELPA T
+  Diag.ELPA_GPU T
+
+Some care is needed in the balance between MPI processes and number of GPUs
+on the compute nodes: careful testing is important.
 
 Go to :ref:`top <groundstate>`.
 
@@ -407,6 +427,34 @@ cell size and shape.  Electrons are added by setting the parameter
 
 This gives the number of extra electrons to be added to the unit cell,
 beyond the valence electrons.
+
+Go to :ref:`top <groundstate>`.
+
+.. _gs_surf_dip:
+
+Surface dipole correction
+-------------------------
+
+If your simulation involves a slab calculation, then unless the slab is
+perfectly symmetrical there can be a dipole moment which gives an unphysical
+field across the periodic cell even for a neutral system.  A correction can be applied, following the
+method outlined in :cite:`g-Neugebauer1992,g-Bengtsson1999` (where we use the energy from the
+Bengtsson paper, which is correct).  This method *only* works for slab
+calculations, and calculates a dipole correction potential, placing the
+necessary discontinuity in the vacuum.  The user can specify the location
+of the discontinuity (in *fractional* coordinates), or the code will place it at the point where the
+planar averaged density is a minimum (which is a good way to find the
+centre of the vacuum).
+
+::
+
+   SC.SurfaceDipoleCorrection T/F
+   SC.SurfaceNormal x, y, or z
+   SC.DiscontinuityLocation (*real*)
+
+It is also possible to write out the planar-averaged potential and charge density
+(averaged in the plane perpendicular to the surface normal) using the parameter
+``SC.OutputAveragePotential T/F``.  This generates the file ``AveragedPotential.dat``.
 
 Go to :ref:`top <groundstate>`.
 

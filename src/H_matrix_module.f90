@@ -630,7 +630,9 @@ contains
     use block_module,                only: n_blocks, n_pts_in_block
     use primary_module,              only: domain
     use set_blipgrid_module,         only: naba_atoms_of_blocks
-    use density_module,              only: density_pcc, density_atom
+    use density_module,              only: density_pcc, density_atom, &
+         flag_surface_dipole_correction, get_surface_dipole, get_average_potential, &
+         flag_output_average_potential
     use GenComms,                    only: gsum, inode, ionode, cq_abort
     use energy,                      only: hartree_energy_total_rho,  &
                                            xc_energy,       &
@@ -799,6 +801,11 @@ contains
     end if
     call gsum(delta_E_xc)
     delta_E_xc = delta_E_xc * grid_point_volume
+    if(flag_surface_dipole_correction) then
+       call get_surface_dipole(h_potential, rho_tot, size)
+    else if (flag_output_average_potential) then
+       call get_average_potential(h_potential, rho_tot, size)
+    end if
     !
     !
     ! Make total potential

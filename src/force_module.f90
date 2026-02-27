@@ -225,6 +225,8 @@ contains
   !!    Add printint forces/stress in ASE output
   !!   2023/01/10 18:41 lionel
   !!    Secure ASE printing when using ordern
+  !!   2025/01/20 17:07 dave
+  !!    Add constraints on stress when constraining cell optimisation
   !!  SOURCE
   !!
   subroutine force(fixed_potential, vary_mu, n_cg_L_iterations, &
@@ -258,11 +260,16 @@ contains
                                       flag_neutral_atom, flag_stress, &
                                       rcellx, rcelly, rcellz, flag_mix_L_SC_min, &
                                       flag_atomic_stress, non_atomic_stress, &
-                                      flag_heat_flux, cell_constraint_flag, min_layer
+                                      flag_heat_flux, cell_constraint_flag, &
+                                      atom_coord, species_glob, min_layer, &
+                                      flag_heat_flux, cell_constraint_flag
     use density_module,         only: get_electronic_density, density, &
-                                      build_Becke_weight_forces
+         build_Becke_weight_forces, &
+         flag_surface_dipole_correction, &
+         surface_dipole_density, surface_normal, surface_dipole_energy_elec, &
+         surface_dipole_energy_ion
     use functions_on_grid,      only: atomfns, H_on_atomfns
-    use dimens,                 only: n_my_grid_points
+    use dimens,                 only: n_my_grid_points, r_super_x, r_super_y, r_super_z
     use matrix_data,            only: Hrange
     use mult_module,            only: matK, matKatomf, SF_to_AtomF_transform
     use maxima_module,          only: maxngrid
@@ -273,6 +280,7 @@ contains
                                        delta_E_xc, xc_energy, hartree_energy_drho
     use hartree_module, only: Hartree_stress
     use XC, ONLY: XC_GGA_stress
+    use species_module, only: charge
     use io_module, only: atom_output_threshold, return_prefix
     use input_module,         only: leqi, io_close
     use io_module, only: atom_output_threshold, return_prefix
@@ -288,7 +296,8 @@ contains
     ! Local variables
     integer        :: i, j, ii, stat, max_atom, max_compt, ispin, &
                       direction, dir1, dir2, counter
-    real(double)   :: max_force, volume, scale, g0
+    real(double), dimension(3) :: dipole_correction_force
+    real(double)   :: max_force, volume, scale, g0, scaleC, r_super_norm
     type(cq_timer) :: tmr_l_tmp1
     type(cq_timer) :: backtrace_timer
     integer        :: backtrace_level
@@ -393,6 +402,9 @@ contains
          else
             GPV_stress(dir1,dir1) = (hartree_energy_total_rho + &
               local_ps_energy - core_correction) ! core contains 1/V term
+         end if
+         if(flag_surface_dipole_correction) then
+            GPV_stress(dir1,dir1) = GPV_stress(dir1,dir1) + surface_dipole_energy_elec
          end if
          ! XC_GGA_stress is zero for LDA
          if(flag_self_consistent .or. flag_mix_L_SC_min) then
@@ -575,12 +587,33 @@ contains
        write (io_ase, fmt='(4x,a)') &
             trim(prefix)//"  Atom   X              Y              Z"             
     end if
+    select case(surface_normal)
+    case(1) ! X
+       r_super_norm = r_super_x
+    case(2) ! Y
+       r_super_norm = r_super_y
+    case(3) ! Z
+       r_super_norm = r_super_z
+    end select
     !
     ! END %%%% ASE printing %%%%
     !    
     ! Calculate forces and write out
     g0 = zero
     do i = 1, ni_in_cell
+       if(flag_surface_dipole_correction) then
+          dipole_correction_force = zero
+          dipole_correction_force(surface_normal) = charge(species_glob(i)) * fourpi * &
+               surface_dipole_density / r_super_norm
+          ! Mathematically, we need something like this term for the stress, except
+          ! that I don't think that stress can be defined sensibly when there is a vacuum
+          ! gap as there should be along the surface normal! I have left this here for
+          ! information, but I don't think that it should be included.  DRB 2022/06/06
+          !
+          !dipole_correction_stress(surface_normal) = &
+          !     dipole_correction_stress(surface_normal) + &
+          !     atom_coord(surface_normal,i) * dipole_correction_force(surface_normal)
+       end if
        do j = 1, 3
           ! Force components that are always needed
           tot_force(j,i) = HF_force(j,i) + HF_NL_force(j,i) + &
@@ -605,6 +638,8 @@ contains
                tot_force(j,i) = tot_force(j,i) + disp_force(j,i)
           if(flag_neutral_atom_projector) &
                tot_force(j,i) = tot_force(j,i) + NA_force(j,i)
+          if(flag_surface_dipole_correction) &
+               tot_force(j,i) = tot_force(j,i) + dipole_correction_force(j)
           ! Zero force on fixed atoms
           if (.not. flag_move_atom(j,i)) then
              tot_force(j,i) = zero
@@ -637,6 +672,9 @@ contains
              else
                 write(io_lun, 106) trim(prefix),(for_conv * ion_interaction_force(j,i), j = 1, 3)
              end if
+             if(flag_surface_dipole_correction) &
+                  write(io_lun, fmt='(4x,a,3f15.10)') trim(prefix)//" Force dipole : ", &
+                  (for_conv * dipole_correction_force(j), j = 1, 3)
              if (flag_pcc_global) write(io_lun, 108) trim(prefix),(for_conv *   pcc_force(j,i), j = 1, 3)
              if (flag_dft_d2) write (io_lun, 109) trim(prefix),(for_conv * disp_force(j,i), j = 1, 3)
              if (flag_perform_cdft) write (io_lun, fmt='(4x,a,3f15.10)') &
@@ -740,6 +778,28 @@ contains
        else if (leqi(cell_constraint_flag, 'b c') .or. leqi(cell_constraint_flag, 'c b')) then
           stress(2,2) = zero
           stress(3,3) = zero
+       ! These ensure that the stresses maintain the desired ratio while keeping the average fixed
+       else if (leqi(cell_constraint_flag,'a/b') .or. leqi(cell_constraint_flag,'b/a')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcelly/rcellx
+          ! Average x-y stress
+          stress(1,1) = (stress(1,1) + stress(2,2))/(one + scaleC)
+          stress(2,2) = scaleC*stress(1,1)
+       else if (leqi(cell_constraint_flag,'a/c') .or. leqi(cell_constraint_flag,'c/a')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcellz/rcellx
+          ! Average x-z stress
+          stress(1,1) = (stress(1,1) + stress(3,3))/(one + scaleC)
+          stress(3,3) = scaleC*stress(1,1)
+       else if (leqi(cell_constraint_flag,'c/b') .or. leqi(cell_constraint_flag,'b/c')) then
+          call print_stress(trim(prefix)//" Orig  stress:     ", stress, -2, write_ase) ! Force output
+          ! Desired ratio
+          scaleC = rcelly/rcellz
+          ! Average y-z stress
+          stress(3,3) = (stress(3,3) + stress(2,2))/(one + scaleC)
+          stress(2,2) = scaleC*stress(3,3)
        end if
        ! Output
        if (inode == ionode.AND.iprint_MD + min_layer>2) then
@@ -926,6 +986,8 @@ contains
   !!    Added calculations for off-diagonal elements of PP_stress and SP_stress
   !!   2019/05/08 zamaan
   !!    Added atomic stress contributions
+  !!   2025/03/20 16:07 dave
+  !!    Added electron number gradient contribution to S-Pulay force and stress
   !!  SOURCE
   !!
   subroutine pulay_force(p_force, KE_force, fixed_potential, vary_mu,  &
@@ -939,7 +1001,7 @@ contains
     use matrix_module,               only: matrix, matrix_halo
     use matrix_data,                 only: mat, halo, blip_trans, Srange, aSa_range
     use mult_module,                 only: LNV_matrix_multiply,      &
-                                           matM12,                   &
+                                           matM12, matM4,            &
                                            allocate_temp_matrix,     &
                                            free_temp_matrix,         &
                                            return_matrix_value,      &
@@ -947,7 +1009,7 @@ contains
                                            scale_matrix_value,       &
                                            matKatomf,                &
                                            return_matrix_block_pos,  &
-                                           matrix_scale,             &
+                                           matrix_scale, matrix_sum, &
                                            SF_to_AtomF_transform
     use global_module,               only: iprint_MD, WhichPulay,    &
                                            BothPulay, PhiPulay,      &
@@ -959,7 +1021,7 @@ contains
                                            id_glob, species_glob,    &
                                            flag_diagonalisation,     &
                                            flag_full_stress, flag_stress, &
-                                           flag_atomic_stress, min_layer
+                                           flag_atomic_stress, min_layer, mu_DMM
     use set_bucket_module,           only: rem_bucket, atomf_atomf_rem
     use blip_grid_transform_module,  only: blip_to_support_new,      &
                                            blip_to_grad_new
@@ -1102,8 +1164,12 @@ contains
     ! If we're diagonalising, we've already build data_M12
     if (.not. flag_diagonalisation) then
        call LNV_matrix_multiply(electrons, energy_tmp, dontK, doM1,   &
-                                doM2, dontM3, dontM4, dontphi, dontE, &
-                                mat_M12=matM12)
+                                doM2, dontM3, doM4, dontphi, dontE, &
+                                mat_M12=matM12, mat_M4=matM4)
+       ! Electron number gradient contribution to S-Pulay force and stress
+       do spin=1,nspin
+          call matrix_sum(one,matM12(spin),-half*mu_DMM(spin),matM4(spin))
+       end do
     end if
     t1 = mtime()
     t0 = t1

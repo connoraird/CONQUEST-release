@@ -951,25 +951,26 @@ AtomMove.OptCell.Constraint (*string*)
 
     *Fixing a single cell dimension:*
 
-    a: Fix the x-dimension of the simulation box
+    ``a``: Fix the x-dimension of the simulation cell
 
-    b: Fix the y-dimension of the simulation box
+    ``b``: Fix the y-dimension of the simulation cell
 
-    c: Fix the z-dimension of the simulation box
+    ``c``: Fix the z-dimension of the simulation cell
 
     *Fixing multiple cell dimensions:*
 
-    any combination of the above separated by a space character. e.g: "a b" fixes
-    both the x and y dimensions of the simulation box
+
+    Any combination of the above separated by a space character. e.g: ``a b`` fixes
+    both the x- and y-dimensions of the simulation cell.
 
     *Fixing Ratios:*
 
-    Any combination of a, b or c separated by a "/" character. e.g "c/a" fixes
-    the initial ratio of the z-dimension to the x-direction.
+    Any combination of a, b or c separated by a "/" character, e.g ``c/a`` fixes
+    the initial ratio of the z-dimension to the x-dimension.
 
     *Global scaling factor:*
 
-    volume: minimize the total energy by scaling each simulation box dimension by
+    ``volume``: minimize the total energy by scaling each simulation cell dimension by
     the same global scaling factor. Search directions are set by the mean stress.
 
 AtomMove.TestSpecificForce (*integer*)
